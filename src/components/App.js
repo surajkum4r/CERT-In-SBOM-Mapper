@@ -271,13 +271,13 @@ export default function App() {
     }
 
     const docControl = [
-      ["Report Name", "<Payatu-ClientName-ProductName-#-DD-MM-YYYY>"],
+      ["Report Name", "<OrgName-ClientName-ProductName-#-DD-MM-YYYY>"],
       ["Report Version", "<X.X>"],
       ["Product Name", "<Product Name>"],
       ["Product Version", "<X.X.X>"],
       ["Product Description", "<Short description about project>"],
       ["Timestamp", "<Add the value from metadata from json file>"],
-      ["Author", "Payatu"],
+      ["Author", "Suraj Kumar"],
     ];
     const wsDoc = XLSX.utils.aoa_to_sheet(docControl);
 
