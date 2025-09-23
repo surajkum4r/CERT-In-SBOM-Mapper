@@ -30,7 +30,7 @@ For detailed guidelines, refer to the official CERT-In document:
 
 ## Why CERT-In SBOM Mapper?
 
-While exploring multiple paid and open-source tools, none fully satisfy all the minimum elements required by the CERT-In guideline. This tool serves as an addon to existing SBOM generators by adding all missing fields and enables exporting the augmented SBOM in CycloneDX and Excel formats.
+While exploring few paid and open-source tools, we found it does not fully satisfy all the minimum elements required by the CERT-In guideline. This tool serves as an addon to existing SBOM generators by adding all missing fields and enables exporting the augmented SBOM in CycloneDX and Excel formats.
 
 ---
 
