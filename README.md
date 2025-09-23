@@ -120,6 +120,7 @@ Notes:
 
 ---
 
+
 ## Screenshots
 
 ![Fetching details](/public/demo1.png)
@@ -127,3 +128,31 @@ Notes:
 ![CERT-In Property](/public/demo2.png)
 
 ![Final CycloneDX](/public/demo3.png)
+
+---
+
+## Running with Docker
+
+You can run CERT-In SBOM Mapper using Docker for easy setup and deployment.
+
+### Build the Docker image
+
+```powershell
+docker build -t cert-in-sbom-mapper .
+```
+
+### Run the Docker container
+
+```powershell
+docker run -p 3000:3000 cert-in-sbom-mapper
+```
+
+This will start the application and expose it on [http://localhost:3000](http://localhost:3000).
+
+You can also pass environment variables using the `-e` flag if needed:
+
+```powershell
+docker run -p 3000:3000 -e REACT_APP_DEBUG_FETCH=1 cert-in-sbom-mapper
+```
+
+---
