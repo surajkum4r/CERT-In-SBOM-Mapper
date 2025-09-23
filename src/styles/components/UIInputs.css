@@ -1,0 +1,90 @@
+.ui-label {
+  display: block;              /* force line break for each field */
+  margin-bottom: 14px;         /* spacing between fields */
+  font-size: 14px;
+  font-weight: 600;
+  color: #004080;              /* match hashes/legend color */
+}
+
+.ui-label-text {
+  display: block;              /* label text above the input */
+  margin-bottom: 6px;
+}
+
+.ui-input,
+.ui-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 0.95rem;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background-color: #fff;
+  box-sizing: border-box;
+}
+
+.ui-input:focus,
+.ui-textarea:focus {
+  border-color: #004080;
+  outline: none;
+  box-shadow: 0 0 4px rgba(0, 64, 128, 0.4);
+}
+
+.ui-textarea {
+  resize: vertical;
+}
+
+.tooltip {
+  position: relative;
+  display: inline-block;
+  cursor: help;
+  margin-left: 6px;
+}
+
+.tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #007bff;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.tooltip .tooltip-text {
+  display: none;
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  background-color: #333;
+  color: #fff;
+  text-align: left;
+  border-radius: 6px;
+  padding: 6px 10px;
+  z-index: 10;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  white-space: normal;
+}
+
+.tooltip .tooltip-text::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #333 transparent transparent transparent;
+}
+
+.tooltip:hover .tooltip-text {
+  display: block;
+}

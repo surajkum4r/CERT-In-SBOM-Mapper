@@ -1,0 +1,41 @@
+.certin-fieldset {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 15px;
+  background-color: #e7f0ff;
+}
+
+.certin-legend {
+  font-weight: 700;
+  color: #004080;
+}
+
+.certin-label {
+  cursor: help;
+  color: #332e2eff;
+  font-weight: 700;
+}
+
+.certin-input-label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.certin-input {
+  width: 98%;
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+}
+
+.certin-input.monospace {
+  font-family: monospace;
+}
+
+.certin-select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+}

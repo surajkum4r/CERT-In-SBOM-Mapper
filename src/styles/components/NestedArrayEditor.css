@@ -1,0 +1,57 @@
+.nested-editor {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 16px 0;
+  background: #fdfdfd;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.nested-editor-title {
+  font-weight: 700;
+  color: #004080;
+}
+
+.nested-editor-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.nested-editor-input {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-size: 0.9rem;
+}
+
+.nested-editor-remove {
+  padding: 6px 10px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.nested-editor-remove:hover {
+  background-color: #b02a37;
+}
+
+.nested-editor-add {
+  margin-top: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(40, 167, 69, 0.4);
+}
+
+.nested-editor-add:hover {
+  background-color: #218838;
+}
