@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ComponentEditor } from "./ComponentEditor";
+import SignatureManager from "./SignatureManager";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { Pencil } from "lucide-react";
@@ -53,6 +54,7 @@ export default function App() {
   const [tableKey, setTableKey] = useState(0); // Force table re-render
   const [isNewUpload, setIsNewUpload] = useState(false);
   const [isCacheDropdownOpen, setIsCacheDropdownOpen] = useState(false);
+  const [showSignatureManager, setShowSignatureManager] = useState(false);
 
   // Helper functions for notifications
   const showNotification = (message, type = 'error', duration = 5000) => {
@@ -482,6 +484,118 @@ export default function App() {
     setSelectedIndex(null);
   };
 
+  const openSignaturePage = () => {
+    // Save current SBOM to localStorage for the new page
+    if (sbom) {
+      localStorage.setItem('current_sbom', JSON.stringify(sbom));
+    }
+    
+    // Open signature page in new window
+    const signatureWindow = window.open(
+      '/signature.html',
+      'signatureWindow',
+      'width=1200,height=800,scrollbars=yes,resizable=yes'
+    );
+    
+    // Send SBOM data to the new window
+    if (signatureWindow) {
+      signatureWindow.addEventListener('load', () => {
+        signatureWindow.postMessage({
+          type: 'SBOM_DATA',
+          sbom: sbom
+        }, '*');
+      });
+    }
+  };
+
+  const showContextMenu = (event, type) => {
+    // Create context menu
+    const contextMenu = document.createElement('div');
+    contextMenu.style.cssText = `
+      position: fixed;
+      top: ${event.clientY}px;
+      left: ${event.clientX}px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 1000;
+      padding: 8px 0;
+      min-width: 200px;
+    `;
+
+    const menuItems = [
+      {
+        text: 'Open in New Tab',
+        action: () => {
+          if (type === 'signature-new') {
+            openSignaturePage();
+          } else {
+            setShowSignatureManager(true);
+          }
+        }
+      },
+      {
+        text: 'Open in New Window',
+        action: () => {
+          if (type === 'signature-new') {
+            openSignaturePage();
+          } else {
+            const newWindow = window.open('', '_blank', 'width=1200,height=800');
+            newWindow.document.write(`
+              <html>
+                <head><title>Signature Management</title></head>
+                <body>
+                  <h2>Signature Management</h2>
+                  <p>This would be the signature management interface.</p>
+                  <button onclick="window.close()">Close</button>
+                </body>
+              </html>
+            `);
+          }
+        }
+      }
+    ];
+
+    menuItems.forEach(item => {
+      const menuItem = document.createElement('div');
+      menuItem.style.cssText = `
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #333;
+      `;
+      menuItem.textContent = item.text;
+      menuItem.addEventListener('mouseenter', () => {
+        menuItem.style.backgroundColor = '#f0f0f0';
+      });
+      menuItem.addEventListener('mouseleave', () => {
+        menuItem.style.backgroundColor = 'transparent';
+      });
+      menuItem.addEventListener('click', () => {
+        item.action();
+        document.body.removeChild(contextMenu);
+      });
+      contextMenu.appendChild(menuItem);
+    });
+
+    document.body.appendChild(contextMenu);
+
+    // Remove context menu when clicking elsewhere
+    const removeMenu = (e) => {
+      if (!contextMenu.contains(e.target)) {
+        if (document.body.contains(contextMenu)) {
+          document.body.removeChild(contextMenu);
+        }
+        document.removeEventListener('click', removeMenu);
+      }
+    };
+
+    setTimeout(() => {
+      document.addEventListener('click', removeMenu);
+    }, 100);
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -504,12 +618,6 @@ export default function App() {
             onChange={onFileChange}
             className="hidden-input"
           />
-          {sbom && (
-            <p className="sidebar-info" title={sbom?.metadata?.timestamp || ""}>
-              {components.length} component
-              {components.length !== 1 ? "s" : ""} loaded
-            </p>
-          )}
           <p className="sidebar-note">Note: It supports CycloneDX only.</p>
           
           {/* Cache Management Dropdown */}
@@ -546,6 +654,19 @@ export default function App() {
             )}
           </div>
           
+          {sbom && (
+            <div className="sidebar-section digital-signatures">
+              <h3>Digital Signatures</h3>
+              <button
+                onClick={() => setShowSignatureManager(!showSignatureManager)}
+                className="sidebar-btn"
+                title="Toggle Digital Signature Management"
+              >
+                🔐 Digital Signatures
+              </button>
+            </div>
+          )}
+          
           <a
             href="https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf"
             target="_blank"
@@ -561,9 +682,11 @@ export default function App() {
           {fetchProgress !== null && (
             <ProgressBar progress={fetchProgress} label={fetchLabel} />
           )}
-          {!editComponent && components.length > 0 && (
+          {!editComponent && components.length > 0 && !showSignatureManager && (
             <>
-              <h2 className={`main-heading ${isNewUpload ? 'heading-fresh' : ''}`}>Components</h2>
+              <h2 className={`main-heading ${isNewUpload ? 'heading-fresh' : ''}`}>
+                Components <span className="component-count">({components.length} loaded)</span>
+              </h2>
               <div className={`table-wrapper ${isNewUpload ? 'new-upload' : ''}`}>
                 <table key={tableKey} className={`component-table ${isNewUpload ? 'table-fresh' : ''}`}>
                   <thead>
@@ -654,6 +777,21 @@ export default function App() {
               </button>
             </div>
           )}
+
+          {/* Digital Signature Management */}
+          {sbom && !editComponent && showSignatureManager && (
+            <div className="signature-wrapper">
+              <SignatureManager 
+                sbom={sbom} 
+                onSignatureUpdate={(signedSBOM) => {
+                  setSbom(signedSBOM);
+                  showNotification("SBOM signature updated successfully!", 'success');
+                }}
+                onBackToTable={() => setShowSignatureManager(false)}
+              />
+            </div>
+          )}
+
         </main>
       </div>
       

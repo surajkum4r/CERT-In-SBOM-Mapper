@@ -49,6 +49,54 @@
   position: relative;
 }
 
+.sidebar-section {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.sidebar-section.digital-signatures {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #b8c5d1;
+}
+
+.sidebar-section h3 {
+  color: #2c3e50;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 10px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-btn {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-btn:hover {
+  background: #2980b9;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-btn:active {
+  transform: translateY(0);
+}
+
 .sidebar h2 {
   margin-bottom: 1px;
   color: #004080;
@@ -101,6 +149,12 @@
   font-weight: 700;
 }
 
+.component-count {
+  font-weight: 400;
+  color: #666;
+  font-size: 0.9em;
+}
+
 .main-heading.heading-fresh {
   animation: headingPulse 1.0s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   color: #004080;
@@ -117,6 +171,11 @@
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05), inset 0 -1px 0 #ddd;
   border-radius: 8px;
   border: 1px solid #ddd;
+}
+
+/* Signature wrapper - align with table */
+.signature-wrapper {
+  margin-bottom: 20px;
 }
 
 .component-table {
