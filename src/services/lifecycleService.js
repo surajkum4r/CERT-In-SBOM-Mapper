@@ -1,5 +1,7 @@
 // Lifecycle service to determine End-of-Life dates
 
+import cacheService from './cacheService';
+
 class LifecycleService {
   constructor() {
     this.overrideCache = null; // from optional /eol-overrides.json

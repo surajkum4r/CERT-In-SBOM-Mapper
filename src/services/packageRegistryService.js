@@ -1,8 +1,10 @@
 // Lightweight package registry service for fetching package metadata
 
+import cacheService from './cacheService';
+
 class PackageRegistryService {
   constructor() {
-    this.cache = new Map();
+    // Use centralized cache service instead of local cache
   }
 
   parsePurl(purl) {
@@ -50,8 +52,8 @@ class PackageRegistryService {
   }
 
   async fetchNpmData(packageName) {
-    const key = `npm:${packageName}`;
-    if (this.cache.has(key)) return this.cache.get(key);
+    const key = cacheService.generateKey('npm', packageName);
+    if (cacheService.has(key)) return cacheService.get(key);
     try {
       const res = await fetch(`https://registry.npmjs.org/${packageName}`);
       if (!res.ok) throw new Error(String(res.status));
@@ -65,7 +67,7 @@ class PackageRegistryService {
         license: typeof data?.license === "string" ? data.license : null,
         author: data?.author?.name || null,
       };
-      this.cache.set(key, result);
+      cacheService.set(key, result);
       return result;
     } catch {
       return null;
@@ -73,8 +75,8 @@ class PackageRegistryService {
   }
 
   async fetchPyPiData(packageName) {
-    const key = `pypi:${packageName}`;
-    if (this.cache.has(key)) return this.cache.get(key);
+    const key = cacheService.generateKey('pypi', packageName);
+    if (cacheService.has(key)) return cacheService.get(key);
     try {
       const res = await fetch(`https://pypi.org/pypi/${packageName}/json`);
       if (!res.ok) throw new Error(String(res.status));
@@ -89,7 +91,7 @@ class PackageRegistryService {
         license: info?.license || null,
         author: info?.author || null,
       };
-      this.cache.set(key, result);
+      cacheService.set(key, result);
       return result;
     } catch {
       return null;
@@ -97,8 +99,8 @@ class PackageRegistryService {
   }
 
   async fetchMavenData(group, artifact) {
-    const key = `maven:${group}:${artifact}`;
-    if (this.cache.has(key)) return this.cache.get(key);
+    const key = cacheService.generateKey('maven', group, artifact);
+    if (cacheService.has(key)) return cacheService.get(key);
     try {
       // Query Maven Central for latest doc and timestamp
       const q = encodeURIComponent(`g:"${group}" AND a:"${artifact}"`);
@@ -118,7 +120,7 @@ class PackageRegistryService {
         license: null,
         author: null,
       };
-      this.cache.set(key, result);
+      cacheService.set(key, result);
       return result;
     } catch {
       return null;

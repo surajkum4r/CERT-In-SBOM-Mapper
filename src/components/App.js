@@ -6,6 +6,9 @@ import { Pencil } from "lucide-react";
 import "../styles/components/AppView.css";
 import PropertyMapperService from "../services/propertyMapperService";
 import ProgressBar from "./ProgressBar";
+import Notification from "./Notification";
+import errorService from "../services/errorService";
+import cacheService from "../services/cacheService";
 
 const CERT_IN_PROPERTIES = [
   { key: "Patch Status", label: "Patch Status" },
@@ -46,10 +49,64 @@ export default function App() {
   const [propertyMapper] = useState(() => new PropertyMapperService());
   const [fetchProgress, setFetchProgress] = useState(null); // null = idle, 0-100 fetching
   const [fetchLabel, setFetchLabel] = useState("");
+  const [notification, setNotification] = useState(null);
+  const [tableKey, setTableKey] = useState(0); // Force table re-render
+  const [isNewUpload, setIsNewUpload] = useState(false);
+  const [isCacheDropdownOpen, setIsCacheDropdownOpen] = useState(false);
+
+  // Helper functions for notifications
+  const showNotification = (message, type = 'error', duration = 5000) => {
+    setNotification({ message, type, duration });
+  };
+
+  const hideNotification = () => {
+    setNotification(null);
+  };
+
+  // Cache management functions
+  const clearCache = () => {
+    cacheService.forceClear();
+    showNotification('Cache cleared successfully!', 'success');
+  };
+
+  const getCacheInfo = () => {
+    const info = cacheService.getCacheInfo();
+    const checksumStats = cacheService.getChecksumCacheStats();
+    showNotification(
+      `Cache: ${info.size} items (${checksumStats.totalFileResults} file results, ${checksumStats.totalComponentResults} component results), ${Math.round(info.sessionDuration / 1000)}s session`, 
+      'info', 
+      5000
+    );
+  };
+
+  const toggleCacheDropdown = () => {
+    setIsCacheDropdownOpen(!isCacheDropdownOpen);
+  };
 
   const onFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      const errorInfo = errorService.getUserFriendlyMessage(
+        new Error('Invalid file type'), 
+        'Please upload a JSON file'
+      );
+      showNotification(errorInfo.message, 'error');
+      // Clear input on error too
+      e.target.value = '';
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      showNotification('File is too large. Please upload a file smaller than 10MB.', 'error');
+      // Clear input on error too
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -70,57 +127,110 @@ export default function App() {
           setComponents(updatedComponents);
           setSelectedIndex(null);
           setEditComponent(null);
-
           setVulnerabilities(json.vulnerabilities || []);
+          
+          // Trigger fresh table appearance
+          setTableKey(prev => prev + 1);
+          setIsNewUpload(true);
+          
+          // Reset new upload state after animation
+          setTimeout(() => setIsNewUpload(false), 600);
+          
+          // Clear the file input to allow re-uploading the same file
+          const fileInput = document.getElementById('sbomUpload');
+          if (fileInput) {
+            fileInput.value = '';
+          }
 
           // Background auto-populate of CERT-In properties with visible progress
           (async () => {
+            const cacheInfo = cacheService.getCacheInfo();
             setFetchProgress(0);
-            setFetchLabel("Fetching CERT-In properties for components...");
+            setFetchLabel(`Processing components (${cacheInfo.size} cached items available)...`);
+            
             try {
-              const batchSize = 10; // fetch in batches to avoid rate limits and update progress
-              const total = updatedComponents.length;
-              let fetchedList = [];
-              for (let i = 0; i < total; i += batchSize) {
-                const batch = updatedComponents.slice(i, i + batchSize);
-                const results = await Promise.all(
-                  batch.map((c) =>
-                    propertyMapper
-                      .fetchComponentData(c, json.vulnerabilities || [])
-                      .catch(() => ({}))
-                  )
+              // ULTRA-FAST PATH: Check if entire SBOM processing result is cached
+              if (cacheService.hasFileResult(json)) {
+                console.log('[FILE_CHECKSUM] Cache HIT for entire SBOM');
+                setFetchProgress(50);
+                setFetchLabel('Loading cached results...');
+                
+                const cachedResult = cacheService.getFileResult(json);
+                setComponents(cachedResult);
+                setSbom((prev) => ({ ...(prev || {}), components: cachedResult }));
+                
+                setFetchProgress(100);
+                
+                // Show success notification for cached results
+                showNotification(
+                  `Successfully loaded ${updatedComponents.length} components from cache!`, 
+                  'success', 
+                  3000
                 );
-                fetchedList = [...fetchedList, ...results];
-                const pct = Math.round(((i + batch.length) / total) * 100);
-                setFetchProgress(pct);
+                
+                setTimeout(() => {
+                  setFetchProgress(null);
+                  setFetchLabel("");
+                }, 600);
+                return;
               }
+              
+              console.log('[FILE_CHECKSUM] Cache MISS for SBOM, processing components...');
+              setFetchProgress(10);
+              
+              // Process all components in parallel since cache makes it fast
+              const results = await Promise.all(
+                updatedComponents.map((c) =>
+                  propertyMapper
+                    .fetchComponentData(c, json.vulnerabilities || [])
+                    .catch(() => ({}))
+                )
+              );
+              
+              setFetchProgress(90);
 
+              // Optimized property merging - much faster
               const merged = updatedComponents.map((c, idx) => {
-                const fetched = fetchedList[idx] || {};
-                let props = Array.isArray(c.properties) ? [...c.properties] : [];
+                const fetched = results[idx] || {};
+                const existingProps = Array.isArray(c.properties) ? c.properties : [];
+                const newProps = [...existingProps];
+                
+                // Fast property update without function calls
                 CERT_IN_PROPERTIES.forEach(({ key }) => {
                   const val = fetched[key];
                   if (val && val !== "NA") {
-                    props = updateProperty(props, key, String(val));
+                    const existingIdx = newProps.findIndex(p => p.name === key);
+                    if (existingIdx >= 0) {
+                      newProps[existingIdx] = { name: key, value: String(val) };
+                    } else {
+                      newProps.push({ name: key, value: String(val) });
+                    }
                   }
                 });
-                // Ensure we never wipe existing non-NA comments when fetched returns NA/undefined
-                if (!fetched["Comments or Notes"] || fetched["Comments or Notes"] === "NA") {
-                  const existing = props.find((p) => p.name === "Comments or Notes");
-                  if (existing && existing.value) {
-                    props = updateProperty(props, "Comments or Notes", existing.value);
-                  }
-                }
-                return { ...c, properties: props };
+                
+                return { ...c, properties: newProps };
               });
               setComponents(merged);
               setSbom((prev) => ({ ...(prev || {}), components: merged }));
+              
+              // Cache the entire processing result for future use
+              cacheService.setFileResult(json, merged);
+              console.log('[FILE_CHECKSUM] Cached entire SBOM processing result');
             } catch (err) {
-              // eslint-disable-next-line no-console
-              console.error("[BG] auto-fetch error", err);
+              errorService.logError(err, 'Background auto-fetch');
+              const errorInfo = errorService.getUserFriendlyMessage(err, 'Error fetching component data');
+              showNotification(errorInfo.message, 'warning');
             } finally {
               // Ensure user can see 100% before hiding
               setFetchProgress(100);
+              
+              // Show success notification only after processing is 100% complete
+              showNotification(
+                `Successfully processed ${updatedComponents.length} components with CERT-In properties!`, 
+                'success', 
+                4000
+              );
+              
               setTimeout(() => {
                 setFetchProgress(null);
                 setFetchLabel("");
@@ -128,10 +238,20 @@ export default function App() {
             }
           })();
         } else {
-          alert("Invalid CycloneDX SBOM: No components field");
+          const errorInfo = errorService.handleSBOMError(
+            new Error('No components field'), 
+            file.name
+          );
+          showNotification(errorInfo.message, 'error');
+          // Clear input on error
+          e.target.value = '';
         }
       } catch (ex) {
-        alert("Invalid JSON file");
+        errorService.logError(ex, 'File parsing', { fileName: file.name });
+        const errorInfo = errorService.handleSBOMError(ex, file.name);
+        showNotification(errorInfo.message, 'error');
+        // Clear input on error
+        e.target.value = '';
       }
     };
     reader.readAsText(file);
@@ -205,9 +325,11 @@ export default function App() {
 
   const exportCsv = () => {
     if (!components || components.length === 0) {
-      alert("No components to export");
+      showNotification("No components to export. Please upload an SBOM file first.", 'warning');
       return;
     }
+
+    try {
 
     const certInKeys = CERT_IN_PROPERTIES.map((p) => p.key);
 
@@ -262,13 +384,20 @@ export default function App() {
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     saveAs(blob, "cyclonedx-sbom-report.csv");
+    showNotification("CSV file exported successfully!", 'success');
+    } catch (error) {
+      errorService.logError(error, 'CSV export');
+      showNotification("Failed to export CSV file. Please try again.", 'error');
+    }
   };
 
   const exportXlsx = () => {
     if (!components || components.length === 0) {
-      alert("No components to export");
+      showNotification("No components to export. Please upload an SBOM file first.", 'warning');
       return;
     }
+
+    try {
 
     const docControl = [
       ["Report Name", "<OrgName-ClientName-ProductName-#-DD-MM-YYYY>"],
@@ -326,6 +455,11 @@ export default function App() {
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     saveAs(blob, "cyclonedx-sbom-report.xlsx");
+    showNotification("Excel file exported successfully!", 'success');
+    } catch (error) {
+      errorService.logError(error, 'XLSX export');
+      showNotification("Failed to export Excel file. Please try again.", 'error');
+    }
   };
 
   const mapVulnerabilities = () => {
@@ -377,6 +511,41 @@ export default function App() {
             </p>
           )}
           <p className="sidebar-note">Note: It supports CycloneDX only.</p>
+          
+          {/* Cache Management Dropdown */}
+          <div className="cache-management-compact">
+            <button 
+              onClick={toggleCacheDropdown}
+              className="cache-toggle-btn"
+              title="Cache Management"
+            >
+              <span>Cache Management</span>
+              <span className={`dropdown-arrow ${isCacheDropdownOpen ? 'open' : ''}`}>▼</span>
+            </button>
+            
+            {isCacheDropdownOpen && (
+              <div className="cache-dropdown-content">
+                <button 
+                  onClick={getCacheInfo}
+                  className="cache-btn info"
+                  title="Show cache information"
+                >
+                  Cache Info
+                </button>
+                <button 
+                  onClick={clearCache}
+                  className="cache-btn clear"
+                  title="Clear all cached data"
+                >
+                  Clear Cache
+                </button>
+                <p className="cache-note">
+                  Cache persists for 24 hours
+                </p>
+              </div>
+            )}
+          </div>
+          
           <a
             href="https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf"
             target="_blank"
@@ -394,9 +563,9 @@ export default function App() {
           )}
           {!editComponent && components.length > 0 && (
             <>
-              <h2 className="main-heading">Components</h2>
-              <div className="table-wrapper">
-                <table className="component-table">
+              <h2 className={`main-heading ${isNewUpload ? 'heading-fresh' : ''}`}>Components</h2>
+              <div className={`table-wrapper ${isNewUpload ? 'new-upload' : ''}`}>
+                <table key={tableKey} className={`component-table ${isNewUpload ? 'table-fresh' : ''}`}>
                   <thead>
                     <tr>
                       <th className="table-header">#</th>
@@ -487,6 +656,16 @@ export default function App() {
           )}
         </main>
       </div>
+      
+      {/* Notification Component */}
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          duration={notification.duration}
+          onClose={hideNotification}
+        />
+      )}
     </div>
   );
 }

@@ -4,6 +4,8 @@ import PackageRegistryService from "./packageRegistryService";
 import VulnerabilityService from "./vulnerabilityService";
 import GitHubService from "./githubService";
 import LifecycleService from "./lifecycleService";
+import errorService from "./errorService";
+import cacheService from "./cacheService";
 
 class PropertyMapperService {
   constructor() {
@@ -11,6 +13,78 @@ class PropertyMapperService {
     this.vuln = new VulnerabilityService();
     this.gh = new GitHubService();
     this.lifecycle = new LifecycleService();
+  }
+
+  // Check if all required data is cached for fast processing
+  isAllDataCached(component, pkgInfo, repoUrl) {
+    if (!pkgInfo || pkgInfo.ecosystem === "unknown") return true; // No external data needed
+    
+    const pkgKey = pkgInfo?.ecosystem === "npm" 
+      ? cacheService.generateKey('npm', pkgInfo.name)
+      : pkgInfo?.ecosystem === "pypi"
+      ? cacheService.generateKey('pypi', pkgInfo.name)
+      : pkgInfo?.ecosystem === "maven"
+      ? cacheService.generateKey('maven', pkgInfo.group, pkgInfo.name)
+      : null;
+    
+    const vulnKey = cacheService.generateKey('vuln', pkgInfo.ecosystem, pkgInfo.name);
+    const ghKey = repoUrl ? cacheService.generateKey('github', repoUrl.split('/').slice(-2).join('/')) : null;
+    
+    return (!pkgKey || cacheService.has(pkgKey)) &&
+           (!vulnKey || cacheService.has(vulnKey)) &&
+           (!ghKey || cacheService.has(ghKey));
+  }
+
+  // Fast synchronous processing when all data is cached
+  buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities) {
+    // Get cached data directly
+    const pkgData = pkgInfo?.ecosystem === "npm" 
+      ? cacheService.get(cacheService.generateKey('npm', pkgInfo.name))
+      : pkgInfo?.ecosystem === "pypi"
+      ? cacheService.get(cacheService.generateKey('pypi', pkgInfo.name))
+      : pkgInfo?.ecosystem === "maven"
+      ? cacheService.get(cacheService.generateKey('maven', pkgInfo.group, pkgInfo.name))
+      : null;
+    
+    const vulnData = cacheService.get(cacheService.generateKey('vuln', pkgInfo.ecosystem, pkgInfo.name));
+    const ghData = repoUrl ? cacheService.get(cacheService.generateKey('github', repoUrl.split('/').slice(-2).join('/'))) : null;
+    const eolDate = this.lifecycle.fetchEol(component, pkgInfo); // This is synchronous
+
+    // Build properties using cached data
+    const props = {};
+    props["Patch Status"] = this.computePatchStatus(vulnData, pkgInfo, pkgData);
+    props["Release Date"] = pkgData?.releaseDate || ghData?.releaseDate || "NA";
+    props["End-of-Life Date"] = eolDate || "NA";
+    const criticalityFromSbom = this.determineCriticalityFromSbom(sbomVulnerabilities, component);
+    const resolvedCriticality =
+      criticalityFromSbom ||
+      this.determineCriticalityFromOsv(vulnData) ||
+      this.vuln.determineCriticality(vulnData);
+    props["Criticality"] = resolvedCriticality;
+    const license = pkgData?.license || ghData?.license || null;
+    props["Usage Restrictions"] = this.determineUsageRestrictions(license);
+    props["Comments or Notes"] = this.buildComments(pkgData, vulnData, ghData);
+    props["Executable Property"] = pkgInfo?.ecosystem === "npm" ? "Yes" : "No";
+    props["Archive Property"] = "No";
+    props["Structured Property"] = "Yes";
+    props["Component Supplier"] = this.determineSupplier(pkgData, ghData);
+    props["Component Origin"] = this.determineOrigin(pkgData, ghData);
+    props["Unique Identifier"] = this.generateUniqueIdentifier(component, pkgInfo, props["Component Supplier"]);
+
+    // Provide a recommended vulnerability-free version (or NA if unknown)
+    const hasFixed = Array.isArray(vulnData?.fixedVersions) && vulnData.fixedVersions.length > 0;
+    const recommendationText = hasFixed
+      ? `Recommended version: ${vulnData.fixedVersions[0]}`
+      : props["Patch Status"] === "Update available"
+      ? "Recommended version: NA"
+      : null;
+    if (recommendationText) {
+      props["Comments or Notes"] = props["Comments or Notes"] === "NA"
+        ? recommendationText
+        : `${props["Comments or Notes"]}; ${recommendationText}`;
+    }
+
+    return props;
   }
 
   determineUsageRestrictions(license) {
@@ -34,6 +108,35 @@ class PropertyMapperService {
     return "Third-party";
   }
 
+  generateUniqueIdentifier(component, pkgInfo, supplier) {
+    // If component already has a purl, use it as base and modify to include supplier
+    if (component.purl) {
+      // Parse existing purl and reconstruct with supplier
+      const purlParts = component.purl.split('/');
+      if (purlParts.length >= 2) {
+        const type = purlParts[0].replace('pkg:', '');
+        const name = purlParts[purlParts.length - 1];
+        return `pkg:supplier/${supplier}/${type}/${name}`;
+      }
+    }
+    
+    // Generate new purl based on ecosystem and supplier
+    if (pkgInfo?.ecosystem && pkgInfo?.name) {
+      const ecosystem = pkgInfo.ecosystem.toLowerCase();
+      const name = pkgInfo.name;
+      const version = component.version ? `@${component.version}` : '';
+      
+      if (ecosystem === 'maven' && pkgInfo.group) {
+        return `pkg:supplier/${supplier}/${ecosystem}/${pkgInfo.group}/${name}${version}`;
+      } else {
+        return `pkg:supplier/${supplier}/${ecosystem}/${name}${version}`;
+      }
+    }
+    
+    // Fallback to component name
+    return component.name || "NA";
+  }
+
   buildComments(packageData, vulnData, githubData) {
     const notes = [];
     if (packageData?.description) notes.push(`Description: ${packageData.description}`);
@@ -43,37 +146,56 @@ class PropertyMapperService {
   }
 
   async fetchComponentData(component, sbomVulnerabilities = []) {
-    const pkgInfo = this.pkg.extractPackageInfo(component);
-    const repoUrl = (component.externalReferences || []).find((r) => r.type === "vcs" || r.type === "repository")?.url || null;
+    try {
+      // Ultra-fast path: Check if we already have the complete result cached
+      if (cacheService.hasComponentResult(component, sbomVulnerabilities)) {
+        console.log('[CHECKSUM] Cache HIT for component:', component.name);
+        return cacheService.getComponentResult(component, sbomVulnerabilities);
+      }
+      console.log('[CHECKSUM] Cache MISS for component:', component.name);
 
-    const [pkgData, vulnData, ghData, eolDate] = await Promise.all([
-      pkgInfo?.ecosystem === "npm"
-        ? this.pkg.fetchNpmData(pkgInfo.name)
-        : pkgInfo?.ecosystem === "pypi"
-        ? this.pkg.fetchPyPiData(pkgInfo.name)
-        : pkgInfo?.ecosystem === "maven"
-        ? this.pkg.fetchMavenData(pkgInfo.group, pkgInfo.name)
-        : Promise.resolve(null),
-      this.vuln.fetchVulnerabilityData(pkgInfo),
-      this.gh.fetchGitHubData(repoUrl),
-      this.lifecycle.fetchEol(component, pkgInfo),
-    ]);
+      const pkgInfo = this.pkg.extractPackageInfo(component);
+      const repoUrl = (component.externalReferences || []).find((r) => r.type === "vcs" || r.type === "repository")?.url || null;
 
-    if (process.env.REACT_APP_DEBUG_FETCH === "1") {
-      // eslint-disable-next-line no-console
-      console.log("[MAP:init]", {
-        name: component.name,
-        version: component.version,
-        ecosystem: pkgInfo?.ecosystem,
-        maven: pkgInfo?.group ? `${pkgInfo.group}:${pkgInfo.name}` : undefined,
-        repoUrl,
-      });
-    }
+      // Fast path: if all data is cached, process synchronously
+      if (this.isAllDataCached(component, pkgInfo, repoUrl)) {
+        const result = this.buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities);
+        // Cache the complete result for future use
+        cacheService.setComponentResult(component, sbomVulnerabilities, result);
+        return result;
+      }
 
-    const props = {};
-    props["Patch Status"] = this.computePatchStatus(vulnData, pkgInfo, pkgData);
-    props["Release Date"] = pkgData?.releaseDate || ghData?.releaseDate || "NA";
-    props["End-of-Life Date"] = eolDate || "NA";
+      // Use Promise.all instead of Promise.allSettled for faster processing with cached data
+      const results = await Promise.all([
+        pkgInfo?.ecosystem === "npm"
+          ? this.pkg.fetchNpmData(pkgInfo.name)
+          : pkgInfo?.ecosystem === "pypi"
+          ? this.pkg.fetchPyPiData(pkgInfo.name)
+          : pkgInfo?.ecosystem === "maven"
+          ? this.pkg.fetchMavenData(pkgInfo.group, pkgInfo.name)
+          : Promise.resolve(null),
+        this.vuln.fetchVulnerabilityData(pkgInfo),
+        this.gh.fetchGitHubData(repoUrl),
+        this.lifecycle.fetchEol(component, pkgInfo),
+      ]);
+
+      const [pkgData, vulnData, ghData, eolDate] = results;
+
+      if (process.env.REACT_APP_DEBUG_FETCH === "1") {
+        // eslint-disable-next-line no-console
+        console.log("[MAP:init]", {
+          name: component.name,
+          version: component.version,
+          ecosystem: pkgInfo?.ecosystem,
+          maven: pkgInfo?.group ? `${pkgInfo.group}:${pkgInfo.name}` : undefined,
+          repoUrl,
+        });
+      }
+
+      const props = {};
+      props["Patch Status"] = this.computePatchStatus(vulnData, pkgInfo, pkgData);
+      props["Release Date"] = pkgData?.releaseDate || ghData?.releaseDate || "NA";
+      props["End-of-Life Date"] = eolDate || "NA";
     const criticalityFromSbom = this.determineCriticalityFromSbom(sbomVulnerabilities, component);
     const resolvedCriticality =
       criticalityFromSbom ||
@@ -86,9 +208,9 @@ class PropertyMapperService {
     props["Executable Property"] = pkgInfo?.ecosystem === "npm" ? "Yes" : "No";
     props["Archive Property"] = "No";
     props["Structured Property"] = "Yes";
-    props["Unique Identifier"] = component.purl || component.name || "NA";
     props["Component Supplier"] = this.determineSupplier(pkgData, ghData);
     props["Component Origin"] = this.determineOrigin(pkgData, ghData);
+    props["Unique Identifier"] = this.generateUniqueIdentifier(component, pkgInfo, props["Component Supplier"]);
 
     // Provide a recommended vulnerability-free version (or NA if unknown)
     const hasFixed = Array.isArray(vulnData?.fixedVersions) && vulnData.fixedVersions.length > 0;
@@ -118,7 +240,35 @@ class PropertyMapperService {
       });
     }
 
-    return props;
+      // Cache the complete result for future use
+      cacheService.setComponentResult(component, sbomVulnerabilities, props);
+      return props;
+    } catch (error) {
+      errorService.logError(error, 'fetchComponentData', { 
+        componentName: component.name,
+        componentVersion: component.version 
+      });
+      
+      // Return minimal props with error indication
+      const errorProps = {
+        "Patch Status": "Error fetching data",
+        "Release Date": "NA",
+        "End-of-Life Date": "NA",
+        "Criticality": "Unknown",
+        "Usage Restrictions": "NA",
+        "Comments or Notes": "Error occurred while fetching component data",
+        "Executable Property": "Unknown",
+        "Archive Property": "No",
+        "Structured Property": "Yes",
+        "Unique Identifier": component.purl || component.name || "NA",
+        "Component Supplier": "Unknown",
+        "Component Origin": "Unknown"
+      };
+      
+      // Cache even error results to avoid repeated failures
+      cacheService.setComponentResult(component, sbomVulnerabilities, errorProps);
+      return errorProps;
+    }
   }
 
   determineCriticalityFromSbom(sbomVulns, component) {

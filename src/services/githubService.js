@@ -1,8 +1,10 @@
 // GitHub service for basic repository metadata
 
+import cacheService from './cacheService';
+
 class GitHubService {
   constructor() {
-    this.cache = new Map();
+    // Use centralized cache service instead of local cache
   }
 
   normalizeRepoUrl(repoUrl) {
@@ -26,8 +28,8 @@ class GitHubService {
     const token = process.env?.REACT_APP_GITHUB_TOKEN;
     // If no token configured, skip GitHub entirely to avoid 401/429 noise
     if (!token) return null;
-    const key = `github:${owner}/${repo}`;
-    if (this.cache.has(key)) return this.cache.get(key);
+    const key = cacheService.generateKey('github', owner, repo);
+    if (cacheService.has(key)) return cacheService.get(key);
     try {
       const headers = { Authorization: `Bearer ${token}` };
 
@@ -48,7 +50,7 @@ class GitHubService {
         description: data?.description || null,
         homepage: data?.homepage || null,
       };
-      this.cache.set(key, result);
+      cacheService.set(key, result);
       return result;
     } catch {
       return null;
