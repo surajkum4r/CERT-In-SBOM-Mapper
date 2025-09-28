@@ -273,10 +273,14 @@ class PropertyMapperService {
     try {
       // Ultra-fast path: Check if we already have the complete result cached
       if (cacheService.hasComponentResult(component, sbomVulnerabilities)) {
-        console.log('[CHECKSUM] Cache HIT for component:', component.name);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[CHECKSUM] Cache HIT for component:', component.name);
+        }
         return cacheService.getComponentResult(component, sbomVulnerabilities);
       }
-      console.log('[CHECKSUM] Cache MISS for component:', component.name);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[CHECKSUM] Cache MISS for component:', component.name);
+      }
 
       const pkgInfo = this.pkg.extractPackageInfo(component);
       const repoUrl = (component.externalReferences || []).find((r) => r.type === "vcs" || r.type === "repository")?.url || null;
@@ -305,7 +309,7 @@ class PropertyMapperService {
 
       const [pkgData, vulnData, ghData, eolDate] = results;
 
-      if (process.env.REACT_APP_DEBUG_FETCH === "1") {
+      if (process.env.REACT_APP_DEBUG_FETCH === "1" && process.env.NODE_ENV === 'development') {
         // eslint-disable-next-line no-console
         console.log("[MAP:init]", {
           name: component.name,
@@ -349,7 +353,7 @@ class PropertyMapperService {
         : `${props["Comments or Notes"]}; ${recommendationText}`;
     }
 
-    if (process.env.REACT_APP_DEBUG_FETCH === "1") {
+    if (process.env.REACT_APP_DEBUG_FETCH === "1" && process.env.NODE_ENV === 'development') {
       // eslint-disable-next-line no-console
       console.log("[MAP]", {
         name: component.name,

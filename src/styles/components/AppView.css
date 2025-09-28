@@ -73,7 +73,7 @@
   width: 100%;
   padding: 10px 12px;
   margin-bottom: 8px;
-  background: #3498db;
+  background: rgb(52, 107, 165);
   color: white;
   border: none;
   border-radius: 6px;
@@ -85,16 +85,19 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  box-shadow: 0 3px 7px rgba(0, 123, 255, 0.4);
 }
 
 .sidebar-btn:hover {
-  background: #2980b9;
+  background: #274973;
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 10px rgba(0, 123, 255, 0.5);
 }
 
 .sidebar-btn:active {
+  background: #14253a;
   transform: translateY(0);
+  box-shadow: 0 2px 5px rgba(0, 123, 255, 0.4);
 }
 
 .sidebar h2 {

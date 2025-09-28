@@ -7,13 +7,13 @@ const SignaturePage = () => {
   const [notification, setNotification] = useState(null);
 
   useEffect(() => {
-    // Try to load SBOM from localStorage or parent window
-    const savedSBOM = localStorage.getItem('current_sbom');
+    // Try to load SBOM from sessionStorage or parent window
+    const savedSBOM = sessionStorage.getItem('current_sbom');
     if (savedSBOM) {
       try {
         setSbom(JSON.parse(savedSBOM));
       } catch (error) {
-        console.error('Failed to load SBOM from localStorage:', error);
+        console.error('Failed to load SBOM from sessionStorage:', error);
       }
     }
 
@@ -21,7 +21,7 @@ const SignaturePage = () => {
     const handleMessage = (event) => {
       if (event.data.type === 'SBOM_DATA') {
         setSbom(event.data.sbom);
-        localStorage.setItem('current_sbom', JSON.stringify(event.data.sbom));
+        sessionStorage.setItem('current_sbom', JSON.stringify(event.data.sbom));
       }
     };
 
@@ -36,7 +36,7 @@ const SignaturePage = () => {
 
   const handleSignatureUpdate = (signedSBOM) => {
     setSbom(signedSBOM);
-    localStorage.setItem('current_sbom', JSON.stringify(signedSBOM));
+    sessionStorage.setItem('current_sbom', JSON.stringify(signedSBOM));
     
     // Notify parent window
     if (window.opener) {
@@ -59,7 +59,7 @@ const SignaturePage = () => {
         const json = JSON.parse(e.target.result);
         if (json.components) {
           setSbom(json);
-          localStorage.setItem('current_sbom', JSON.stringify(json));
+          sessionStorage.setItem('current_sbom', JSON.stringify(json));
           showNotification("SBOM loaded successfully!", 'success');
         } else {
           showNotification("Invalid SBOM file. Must contain components array.", 'error');

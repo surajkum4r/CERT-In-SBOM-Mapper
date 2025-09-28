@@ -196,9 +196,13 @@ class SignatureService {
     try {
       const keyPair = await this.generateKeyPair();
       
-      // Save to localStorage
-      localStorage.setItem('sbom_private_key', keyPair.privateKey);
-      localStorage.setItem('sbom_public_key', keyPair.publicKey);
+      // Save to sessionStorage for better security
+      try {
+        sessionStorage.setItem('sbom_private_key', keyPair.privateKey);
+        sessionStorage.setItem('sbom_public_key', keyPair.publicKey);
+      } catch (error) {
+        console.warn('Failed to save keys to session storage:', error);
+      }
       
       return keyPair;
     } catch (error) {
@@ -207,10 +211,10 @@ class SignatureService {
     }
   }
 
-  // Load keys from localStorage
+  // Load keys from sessionStorage
   loadKeys() {
-    const privateKey = localStorage.getItem('sbom_private_key');
-    const publicKey = localStorage.getItem('sbom_public_key');
+    const privateKey = sessionStorage.getItem('sbom_private_key');
+    const publicKey = sessionStorage.getItem('sbom_public_key');
     
     if (privateKey && publicKey) {
       return { privateKey, publicKey };
@@ -294,8 +298,8 @@ class SignatureService {
 
   // Clear all stored keys
   clearKeys() {
-    localStorage.removeItem('sbom_private_key');
-    localStorage.removeItem('sbom_public_key');
+    sessionStorage.removeItem('sbom_private_key');
+    sessionStorage.removeItem('sbom_public_key');
   }
 }
 

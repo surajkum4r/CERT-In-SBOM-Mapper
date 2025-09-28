@@ -32,9 +32,14 @@ class StandaloneSignatureService {
       this.privateKey = keyPair.privateKey;
       this.publicKey = keyPair.publicKey;
 
-      // Save to localStorage
-      localStorage.setItem('sbom_private_key', privateKeyPem);
-      localStorage.setItem('sbom_public_key', publicKeyPem);
+      // Save to secure storage (sessionStorage for better security)
+      try {
+        sessionStorage.setItem('sbom_private_key', privateKeyPem);
+        sessionStorage.setItem('sbom_public_key', publicKeyPem);
+      } catch (error) {
+        console.warn('Failed to save keys to session storage:', error);
+        // Fallback to memory storage only
+      }
 
       return {
         privateKey: privateKeyPem,
@@ -384,13 +389,17 @@ class StandaloneSignatureService {
     return bytes.buffer;
   }
 
-  // Load keys from localStorage
+  // Load keys from secure storage
   loadKeys() {
-    const privateKey = localStorage.getItem('sbom_private_key');
-    const publicKey = localStorage.getItem('sbom_public_key');
-    
-    if (privateKey && publicKey) {
-      return { privateKey, publicKey };
+    try {
+      const privateKey = sessionStorage.getItem('sbom_private_key');
+      const publicKey = sessionStorage.getItem('sbom_public_key');
+      
+      if (privateKey && publicKey) {
+        return { privateKey, publicKey };
+      }
+    } catch (error) {
+      console.warn('Failed to load keys from session storage:', error);
     }
     
     return null;
@@ -403,8 +412,12 @@ class StandaloneSignatureService {
 
   // Clear all stored keys
   clearKeys() {
-    localStorage.removeItem('sbom_private_key');
-    localStorage.removeItem('sbom_public_key');
+    try {
+      sessionStorage.removeItem('sbom_private_key');
+      sessionStorage.removeItem('sbom_public_key');
+    } catch (error) {
+      console.warn('Failed to clear keys from session storage:', error);
+    }
     this.privateKey = null;
     this.publicKey = null;
   }

@@ -47,8 +47,8 @@ const SignatureManager = ({ sbom, onSignatureUpdate, onBackToTable }) => {
     setSignatureStatus({ type: 'info', message: 'Regenerating RSA key pair...' });
     try {
       // Clear existing keys directly
-      localStorage.removeItem('sbom_private_key');
-      localStorage.removeItem('sbom_public_key');
+      sessionStorage.removeItem('sbom_private_key');
+      sessionStorage.removeItem('sbom_public_key');
       
       // Generate new keys
       await signatureService.generateAndSaveKeys();

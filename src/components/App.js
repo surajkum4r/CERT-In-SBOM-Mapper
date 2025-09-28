@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ComponentEditor } from "./ComponentEditor";
 import SignatureManager from "./SignatureManager";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { Pencil } from "lucide-react";
 import "../styles/components/AppView.css";
@@ -153,7 +153,9 @@ export default function App() {
             try {
               // ULTRA-FAST PATH: Check if entire SBOM processing result is cached
               if (cacheService.hasFileResult(json)) {
-                console.log('[FILE_CHECKSUM] Cache HIT for entire SBOM');
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('[FILE_CHECKSUM] Cache HIT for entire SBOM');
+                }
                 setFetchProgress(50);
                 setFetchLabel('Loading cached results...');
                 
@@ -177,7 +179,9 @@ export default function App() {
                 return;
               }
               
-              console.log('[FILE_CHECKSUM] Cache MISS for SBOM, processing components...');
+              if (process.env.NODE_ENV === 'development') {
+                console.log('[FILE_CHECKSUM] Cache MISS for SBOM, processing components...');
+              }
               setFetchProgress(10);
               
               // Process all components in parallel since cache makes it fast
@@ -217,7 +221,9 @@ export default function App() {
               
               // Cache the entire processing result for future use
               cacheService.setFileResult(json, merged);
-              console.log('[FILE_CHECKSUM] Cached entire SBOM processing result');
+              if (process.env.NODE_ENV === 'development') {
+                console.log('[FILE_CHECKSUM] Cached entire SBOM processing result');
+              }
             } catch (err) {
               errorService.logError(err, 'Background auto-fetch');
               const errorInfo = errorService.getUserFriendlyMessage(err, 'Error fetching component data');
@@ -315,7 +321,7 @@ export default function App() {
     newComps[selectedIndex] = editComponent;
     setComponents(newComps);
     setSbom((prev) => ({ ...prev, components: newComps }));
-    alert("Component updated!");
+    showNotification("Component updated successfully!", 'success');
   };
 
   const exportSbom = () => {
@@ -393,73 +399,89 @@ export default function App() {
     }
   };
 
-  const exportXlsx = () => {
+  const exportXlsx = async () => {
     if (!components || components.length === 0) {
       showNotification("No components to export. Please upload an SBOM file first.", 'warning');
       return;
     }
 
     try {
+      const workbook = new ExcelJS.Workbook();
+      
+      // Document Control Sheet
+      const docControlSheet = workbook.addWorksheet('Document Control');
+      docControlSheet.addRow(['Report Name', '<OrgName-ClientName-ProductName-#-DD-MM-YYYY>']);
+      docControlSheet.addRow(['Report Version', '<X.X>']);
+      docControlSheet.addRow(['Product Name', '<Product Name>']);
+      docControlSheet.addRow(['Product Version', '<X.X.X>']);
+      docControlSheet.addRow(['Product Description', '<Short description about project>']);
+      docControlSheet.addRow(['Timestamp', '<Add the value from metadata from json file>']);
+      docControlSheet.addRow(['Author', 'Suraj Kumar']);
 
-    const docControl = [
-      ["Report Name", "<OrgName-ClientName-ProductName-#-DD-MM-YYYY>"],
-      ["Report Version", "<X.X>"],
-      ["Product Name", "<Product Name>"],
-      ["Product Version", "<X.X.X>"],
-      ["Product Description", "<Short description about project>"],
-      ["Timestamp", "<Add the value from metadata from json file>"],
-      ["Author", "Suraj Kumar"],
-    ];
-    const wsDoc = XLSX.utils.aoa_to_sheet(docControl);
+      // Components Sheet
+      const componentsSheet = workbook.addWorksheet('Components');
+      
+      const certInKeys = CERT_IN_PROPERTIES.map((p) => p.key);
+      const compVulnMap = mapVulnerabilities();
 
-    const certInKeys = CERT_IN_PROPERTIES.map((p) => p.key);
-    const compVulnMap = mapVulnerabilities();
-
-    const headers = [
-      "Component Name",
-      "Component Version",
-      "Component Description",
-      "Unique Identifier",
-      ...certInKeys,
-      "Vulnerabilities",
-    ];
-
-    const rows = components.map((comp) => {
-      const uniqueId =
-        comp.purl ||
-        (comp.properties &&
-          comp.properties.find((p) => p.name === "Unique Identifier")?.value) ||
-        "";
-
-      const certInValues = certInKeys.map(
-        (key) => comp.properties?.find((p) => p.name === key)?.value || ""
-      );
-
-      const vulnIds = compVulnMap.get(comp["bom-ref"]) || [];
-      const vulnerabilitiesStr = vulnIds.length > 0 ? vulnIds.join(", ") : "None";
-
-      return [
-        comp.name || "",
-        comp.version || "",
-        comp.description || "",
-        uniqueId,
-        ...certInValues,
-        vulnerabilitiesStr,
+      const headers = [
+        "Component Name",
+        "Component Version",
+        "Component Description",
+        "Unique Identifier",
+        ...certInKeys,
+        "Vulnerabilities",
       ];
-    });
 
-    const wsComponents = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      // Add headers with styling
+      const headerRow = componentsSheet.addRow(headers);
+      headerRow.font = { bold: true };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE6E6FA' }
+      };
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, wsDoc, "Document Control");
-    XLSX.utils.book_append_sheet(wb, wsComponents, "Components");
+      // Add data rows
+      components.forEach((comp) => {
+        const uniqueId =
+          comp.purl ||
+          (comp.properties &&
+            comp.properties.find((p) => p.name === "Unique Identifier")?.value) ||
+          "";
 
-    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([wbout], { type: "application/octet-stream" });
-    saveAs(blob, "cyclonedx-sbom-report.xlsx");
-    showNotification("Excel file exported successfully!", 'success');
+        const certInValues = certInKeys.map(
+          (key) => comp.properties?.find((p) => p.name === key)?.value || ""
+        );
+
+        const vulnIds = compVulnMap.get(comp["bom-ref"]) || [];
+        const vulnerabilitiesStr = vulnIds.length > 0 ? vulnIds.join(", ") : "None";
+
+        componentsSheet.addRow([
+          comp.name || "",
+          comp.version || "",
+          comp.description || "",
+          uniqueId,
+          ...certInValues,
+          vulnerabilitiesStr,
+        ]);
+      });
+
+      // Auto-fit columns
+      componentsSheet.columns.forEach(column => {
+        column.width = 15;
+      });
+
+      // Generate Excel file
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      
+      saveAs(blob, "cyclonedx-sbom-report.xlsx");
+      showNotification("Excel file exported successfully!", 'success');
     } catch (error) {
-      errorService.logError(error, 'XLSX export');
+      errorService.logError(error, 'Excel export');
       showNotification("Failed to export Excel file. Please try again.", 'error');
     }
   };
@@ -485,9 +507,15 @@ export default function App() {
   };
 
   const openSignaturePage = () => {
-    // Save current SBOM to localStorage for the new page
+    // Save current SBOM to sessionStorage for better security
     if (sbom) {
-      localStorage.setItem('current_sbom', JSON.stringify(sbom));
+      try {
+        sessionStorage.setItem('current_sbom', JSON.stringify(sbom));
+      } catch (error) {
+        console.warn('Failed to save SBOM to session storage:', error);
+        showNotification('Failed to prepare SBOM for signing. Please try again.', 'error');
+        return;
+      }
     }
     
     // Open signature page in new window
