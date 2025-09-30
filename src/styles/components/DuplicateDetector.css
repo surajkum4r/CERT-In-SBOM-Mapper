@@ -132,12 +132,7 @@
 }
 
 .duplicates-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 12px;
 }
 
 .duplicates-header h3 {
@@ -251,6 +246,60 @@
   background: #f8f9fa;
   border-radius: 6px;
   border: 1px solid #e9ecef;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  transition: all 0.2s ease;
+}
+
+.duplicate-component.selected {
+  background: #e3f2fd;
+  border-color: #2196f3;
+  box-shadow: 0 2px 4px rgba(33, 150, 243, 0.2);
+}
+
+.component-checkbox {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.component-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.master-selection-control {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.master-checkbox-section {
+  display: flex;
+  align-items: center;
+}
+
+.master-selection-control input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.group-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.group-actions .btn {
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .component-info {

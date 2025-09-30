@@ -6,12 +6,8 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
   const [duplicates, setDuplicates] = useState([]);
   const [stats, setStats] = useState(null);
   const [isDetecting, setIsDetecting] = useState(false);
-  const [detectionOptions, setDetectionOptions] = useState({
-    methods: ['exact', 'nameVersion', 'purl'],
-    includeConfidence: true
-  });
   const [selectedDuplicates, setSelectedDuplicates] = useState(new Set());
-  const [mergeStrategy, setMergeStrategy] = useState('keepFirst');
+  const [selectedComponents, setSelectedComponents] = useState(new Map()); // Map of duplicateIndex -> Set of component indices
   const [isProcessing, setIsProcessing] = useState(false);
 
   const duplicateService = new DuplicateDetectionService();
@@ -20,14 +16,14 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
     if (components && components.length > 0) {
       detectDuplicates();
     }
-  }, [components, detectionOptions]);
+  }, [components]);
 
   const detectDuplicates = async () => {
     if (!components || components.length === 0) return;
 
     setIsDetecting(true);
     try {
-      const detectedDuplicates = duplicateService.detectDuplicates(components, detectionOptions);
+      const detectedDuplicates = duplicateService.detectDuplicates(components);
       const duplicateStats = duplicateService.getDuplicateStats(detectedDuplicates);
       
       setDuplicates(detectedDuplicates);
@@ -44,14 +40,6 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
     }
   };
 
-  const handleMethodToggle = (method) => {
-    setDetectionOptions(prev => ({
-      ...prev,
-      methods: prev.methods.includes(method)
-        ? prev.methods.filter(m => m !== method)
-        : [...prev.methods, method]
-    }));
-  };
 
 
   const toggleDuplicateSelection = (duplicateIndex) => {
@@ -64,34 +52,85 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
     setSelectedDuplicates(newSelected);
   };
 
-  const selectAllDuplicates = () => {
-    setSelectedDuplicates(new Set(duplicates.map((_, index) => index)));
+
+  const clearGroupSelection = (duplicateIndex) => {
+    setSelectedComponents(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(duplicateIndex);
+      return newMap;
+    });
   };
 
-  const clearSelection = () => {
-    setSelectedDuplicates(new Set());
+  const toggleComponentSelection = (duplicateIndex, componentIndex) => {
+    setSelectedComponents(prev => {
+      const newMap = new Map(prev);
+      if (!newMap.has(duplicateIndex)) {
+        newMap.set(duplicateIndex, new Set());
+      }
+      const componentSet = new Set(newMap.get(duplicateIndex));
+      if (componentSet.has(componentIndex)) {
+        componentSet.delete(componentIndex);
+      } else {
+        componentSet.add(componentIndex);
+      }
+      newMap.set(duplicateIndex, componentSet);
+      return newMap;
+    });
   };
 
-  const handleMergeSelected = async () => {
-    if (selectedDuplicates.size === 0) return;
 
+  const isAllComponentsSelected = (duplicateIndex) => {
+    const duplicate = duplicates[duplicateIndex];
+    const selectedSet = selectedComponents.get(duplicateIndex) || new Set();
+    return duplicate.components.every(comp => selectedSet.has(comp.index));
+  };
+
+  const hasAnyComponentsSelected = (duplicateIndex) => {
+    const duplicate = duplicates[duplicateIndex];
+    const selectedSet = selectedComponents.get(duplicateIndex) || new Set();
+    return duplicate.components.some(comp => selectedSet.has(comp.index));
+  };
+
+  const toggleAllComponentsInGroup = (duplicateIndex) => {
+    const duplicate = duplicates[duplicateIndex];
+    const allIndices = duplicate.components.map(comp => comp.index);
+    const selectedSet = selectedComponents.get(duplicateIndex) || new Set();
+    
+    setSelectedComponents(prev => {
+      const newMap = new Map(prev);
+      if (isAllComponentsSelected(duplicateIndex)) {
+        // If all are selected, deselect all
+        newMap.set(duplicateIndex, new Set());
+      } else {
+        // If not all are selected, select all
+        newMap.set(duplicateIndex, new Set(allIndices));
+      }
+      return newMap;
+    });
+  };
+
+  const handleMergeSingleGroup = async (duplicateIndex) => {
     setIsProcessing(true);
     try {
       let updatedComponents = [...components];
-      const sortedIndices = Array.from(selectedDuplicates).sort((a, b) => b - a);
-
-      // Process duplicates in reverse order to maintain indices
-      for (const duplicateIndex of sortedIndices) {
-        const duplicate = duplicates[duplicateIndex];
-        updatedComponents = duplicateService.mergeDuplicates(
-          updatedComponents, 
-          duplicate, 
-          mergeStrategy
-        );
+      const duplicate = duplicates[duplicateIndex];
+      const selectedComponentIndices = selectedComponents.get(duplicateIndex) || new Set();
+      
+      // If no components selected, keep first one by default
+      if (selectedComponentIndices.size === 0) {
+        selectedComponentIndices.add(duplicate.components[0].index);
       }
+      
+      // Create custom merge with selected components
+      updatedComponents = mergeSelectedComponents(
+        updatedComponents, 
+        duplicate, 
+        selectedComponentIndices
+      );
 
       onComponentsUpdate(updatedComponents);
       setSelectedDuplicates(new Set());
+      setSelectedComponents(new Map());
       
       // Re-detect duplicates with updated components
       setTimeout(() => {
@@ -105,30 +144,32 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
     }
   };
 
-  const handleRemoveSelected = async () => {
-    if (selectedDuplicates.size === 0) return;
-
+  const handleRemoveSingleGroup = async (duplicateIndex) => {
     setIsProcessing(true);
     try {
       let updatedComponents = [...components];
-      const indicesToRemove = new Set();
-
-      // Collect all component indices to remove
-      selectedDuplicates.forEach(duplicateIndex => {
-        const duplicate = duplicates[duplicateIndex];
+      const duplicate = duplicates[duplicateIndex];
+      const selectedComponentIndices = selectedComponents.get(duplicateIndex) || new Set();
+      
+      // If no components selected, remove all by default
+      if (selectedComponentIndices.size === 0) {
         duplicate.components.forEach(comp => {
-          indicesToRemove.add(comp.index);
+          const indexToRemove = updatedComponents.findIndex(c => c === comp.component);
+          if (indexToRemove !== -1) {
+            updatedComponents.splice(indexToRemove, 1);
+          }
         });
-      });
-
-      // Remove components in reverse order
-      const sortedIndices = Array.from(indicesToRemove).sort((a, b) => b - a);
-      sortedIndices.forEach(index => {
-        updatedComponents.splice(index, 1);
-      });
+      } else {
+        // Remove only selected components
+        const indicesToRemove = Array.from(selectedComponentIndices).sort((a, b) => b - a);
+        indicesToRemove.forEach(index => {
+          updatedComponents.splice(index, 1);
+        });
+      }
 
       onComponentsUpdate(updatedComponents);
       setSelectedDuplicates(new Set());
+      setSelectedComponents(new Map());
       
       // Re-detect duplicates with updated components
       setTimeout(() => {
@@ -140,6 +181,74 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
     } finally {
       setIsProcessing(false);
     }
+  };
+
+
+  // Merge selected components into one
+  const mergeSelectedComponents = (components, duplicate, selectedIndices) => {
+    if (selectedIndices.size === 0) return components;
+    
+    const indices = Array.from(selectedIndices).sort((a, b) => a - b);
+    const componentsToMerge = indices.map(idx => components[idx]);
+    
+    // Merge properties from selected components
+    const mergedComponent = mergeComponentProperties(componentsToMerge);
+    
+    // Create new components array
+    const newComponents = [...components];
+    
+    // Remove all selected components
+    indices.reverse().forEach(idx => {
+      newComponents.splice(idx, 1);
+    });
+    
+    // Add merged component
+    newComponents.push(mergedComponent);
+    
+    return newComponents;
+  };
+
+  // Merge properties from multiple components
+  const mergeComponentProperties = (components) => {
+    const merged = { ...components[0] };
+    
+    // Merge properties array
+    if (merged.properties) {
+      const allProperties = components.flatMap(comp => comp.properties || []);
+      const uniqueProperties = [];
+      const seen = new Set();
+      
+      allProperties.forEach(prop => {
+        const key = `${prop.name}:${prop.value}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueProperties.push(prop);
+        }
+      });
+      
+      merged.properties = uniqueProperties;
+    }
+    
+    // Merge other arrays
+    ['licenses', 'hashes', 'externalReferences'].forEach(field => {
+      if (merged[field]) {
+        const allItems = components.flatMap(comp => comp[field] || []);
+        const uniqueItems = [];
+        const seen = new Set();
+        
+        allItems.forEach(item => {
+          const key = JSON.stringify(item);
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueItems.push(item);
+          }
+        });
+        
+        merged[field] = uniqueItems;
+      }
+    });
+    
+    return merged;
   };
 
   const getConfidenceColor = (confidence) => {
@@ -187,26 +296,10 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
 
       {/* Detection Options */}
       <div className="detection-options">
-        <h3>Detection Methods</h3>
-        <div className="method-options">
-          {Object.entries(duplicateService.detectionMethods).map(([key, label]) => (
-            <label key={key} className="method-option">
-              <input
-                type="checkbox"
-                checked={detectionOptions.methods.includes(key)}
-                onChange={() => handleMethodToggle(key)}
-                disabled={isDetecting}
-              />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
-
-
         <button 
           onClick={detectDuplicates} 
           className="btn btn-primary"
-          disabled={isDetecting || detectionOptions.methods.length === 0}
+          disabled={isDetecting}
         >
           {isDetecting ? 'Detecting...' : '🔍 Detect Duplicates'}
         </button>
@@ -242,37 +335,6 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
         <div className="duplicates-section">
           <div className="duplicates-header">
             <h3>Detected Duplicates ({duplicates.length})</h3>
-            <div className="bulk-actions">
-              <button onClick={selectAllDuplicates} className="btn btn-sm btn-secondary">
-                Select All
-              </button>
-              <button onClick={clearSelection} className="btn btn-sm btn-secondary">
-                Clear Selection
-              </button>
-              <select 
-                value={mergeStrategy} 
-                onChange={(e) => setMergeStrategy(e.target.value)}
-                className="merge-strategy-select"
-              >
-                <option value="keepFirst">Keep First</option>
-                <option value="keepLast">Keep Last</option>
-                <option value="mergeProperties">Merge Properties</option>
-              </select>
-              <button 
-                onClick={handleMergeSelected}
-                disabled={selectedDuplicates.size === 0 || isProcessing}
-                className="btn btn-sm btn-success"
-              >
-                {isProcessing ? 'Processing...' : `Merge Selected (${selectedDuplicates.size})`}
-              </button>
-              <button 
-                onClick={handleRemoveSelected}
-                disabled={selectedDuplicates.size === 0 || isProcessing}
-                className="btn btn-sm btn-danger"
-              >
-                {isProcessing ? 'Processing...' : `Remove Selected (${selectedDuplicates.size})`}
-              </button>
-            </div>
           </div>
 
           <div className="duplicates-list">
@@ -300,22 +362,63 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
                       </span>
                     </div>
                   </div>
-                  <input 
-                    type="checkbox" 
-                    checked={selectedDuplicates.has(index)}
-                    onChange={() => toggleDuplicateSelection(index)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
                 </div>
 
                 <div className="duplicate-components">
-                  {duplicate.components.map((comp, compIndex) => (
-                    <div key={compIndex} className="duplicate-component">
-                      <div className="component-info">
-                        <strong>{comp.component.name || 'Unnamed'}</strong>
-                        <span className="component-version">{comp.component.version || 'No version'}</span>
-                        <span className="component-type">{comp.component.type || 'Unknown'}</span>
-                      </div>
+                  <div className="master-selection-control">
+                    <div className="master-checkbox-section">
+                      <input
+                        type="checkbox"
+                        checked={isAllComponentsSelected(index)}
+                        onChange={() => toggleAllComponentsInGroup(index)}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Select all components in this group"
+                      />
+                    </div>
+                    <div className="group-actions">
+                      <button 
+                        onClick={() => clearGroupSelection(index)}
+                        disabled={!hasAnyComponentsSelected(index)}
+                        className="btn btn-sm btn-secondary"
+                        title="Clear selection for this group"
+                      >
+                        Clear
+                      </button>
+                      <button 
+                        onClick={() => handleMergeSingleGroup(index)}
+                        disabled={!hasAnyComponentsSelected(index) || isProcessing}
+                        className="btn btn-sm btn-success"
+                        title="Merge selected components in this group"
+                      >
+                        {isProcessing ? 'Processing...' : 'Merge'}
+                      </button>
+                      <button 
+                        onClick={() => handleRemoveSingleGroup(index)}
+                        disabled={!hasAnyComponentsSelected(index) || isProcessing}
+                        className="btn btn-sm btn-danger"
+                        title="Remove selected components in this group"
+                      >
+                        {isProcessing ? 'Processing...' : 'Remove'}
+                      </button>
+                    </div>
+                  </div>
+                  {duplicate.components.map((comp, compIndex) => {
+                    const isSelected = selectedComponents.get(index)?.has(comp.index) || false;
+                    return (
+                      <div key={compIndex} className={`duplicate-component ${isSelected ? 'selected' : ''}`}>
+                        <div className="component-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleComponentSelection(index, comp.index)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="component-info">
+                          <strong>{comp.component.name || 'Unnamed'}</strong>
+                          <span className="component-version">{comp.component.version || 'No version'}</span>
+                          <span className="component-type">{comp.component.type || 'Unknown'}</span>
+                        </div>
                       <div className="component-details">
                         {comp.component.description && (
                           <div className="component-description">
@@ -336,8 +439,9 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
                           </div>
                         )}
                       </div>
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}

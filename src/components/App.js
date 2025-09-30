@@ -68,6 +68,15 @@ export default function App() {
   const [exportPrivateKeyFile, setExportPrivateKeyFile] = useState(null);
   const [exportPublicKeyFile, setExportPublicKeyFile] = useState(null);
   const [isUploadingKeys, setIsUploadingKeys] = useState(false);
+  const [dialogResetKey, setDialogResetKey] = useState(0);
+  const [nameFilter, setNameFilter] = useState('');
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+
+  // Filter components by name
+  const filteredComponents = components.filter(component => {
+    if (!nameFilter.trim()) return true;
+    return component.name?.toLowerCase().includes(nameFilter.toLowerCase());
+  });
 
   // Handle redirect from signature page
   useEffect(() => {
@@ -401,8 +410,43 @@ export default function App() {
 
   const exportSbom = () => {
     if (!sbom) return;
+    // Force dialog reset by incrementing key
+    setDialogResetKey(prev => prev + 1);
     setShowExportDialog(true);
   };
+
+  // Reset export states when dialog opens
+  useEffect(() => {
+    if (showExportDialog) {
+      // Reset to default state - as if opening for the first time
+      setExportWithSignature(false);
+      setExportKeyOption('generate');
+      setExportPrivateKeyFile(null);
+      setExportPublicKeyFile(null);
+      setIsUploadingKeys(false);
+      
+      // Clear file inputs to remove any selected files
+      setTimeout(() => {
+        const privateInput = document.getElementById('exportPrivateKeyInput');
+        const publicInput = document.getElementById('exportPublicKeyInput');
+        if (privateInput) {
+          privateInput.value = '';
+          privateInput.checked = false;
+        }
+        if (publicInput) {
+          publicInput.value = '';
+          publicInput.checked = false;
+        }
+      }, 0);
+    }
+  }, [showExportDialog]);
+
+  // Clear file inputs when switching export types or key options
+  useEffect(() => {
+    if (showExportDialog) {
+      clearAllFileStates();
+    }
+  }, [exportWithSignature, exportKeyOption]);
 
   const handleExportWithSignature = async () => {
     if (!sbom) return;
@@ -411,24 +455,23 @@ export default function App() {
     try {
       const signatureService = new StandaloneSignatureService();
       
-      // Check if keys exist, if not generate or upload based on option
-      if (!signatureService.hasKeys()) {
-        if (exportKeyOption === 'generate') {
-          await signatureService.generateAndSaveKeys();
-          showNotification("Generated new key pair for signing", 'success');
-        } else if (exportKeyOption === 'upload') {
-          // Check if files are selected for inline upload
-          if (!exportPrivateKeyFile || !exportPublicKeyFile) {
-            showNotification("Please select both private and public key files", 'error');
-            return;
-          }
-          // Upload the keys
-          const result = await signatureService.uploadKeyPair(exportPrivateKeyFile, exportPublicKeyFile);
-          showNotification(result.message, 'success');
-        } else {
-          showNotification("Please select a key option", 'error');
+      // Generate or upload keys based on selected option
+      if (exportKeyOption === 'generate') {
+        // Always generate new keys when "Generate new key pair" is selected
+        await signatureService.generateAndSaveKeys();
+        showNotification("Generated new key pair for signing", 'success');
+      } else if (exportKeyOption === 'upload') {
+        // Check if files are selected for inline upload
+        if (!exportPrivateKeyFile || !exportPublicKeyFile) {
+          showNotification("Please select both private and public key files", 'error');
           return;
         }
+        // Upload the keys
+        const result = await signatureService.uploadKeyPair(exportPrivateKeyFile, exportPublicKeyFile);
+        showNotification(result.message, 'success');
+      } else {
+        showNotification("Please select a key option", 'error');
+        return;
       }
       
       // Sign the SBOM
@@ -469,15 +512,44 @@ export default function App() {
 
   const cancelExport = () => {
     setShowExportDialog(false);
+    // Reset to default state
     setExportWithSignature(false);
     setExportKeyOption('generate');
     setExportPrivateKeyFile(null);
     setExportPublicKeyFile(null);
+    setIsUploadingKeys(false);
     // Reset file inputs
     const privateInput = document.getElementById('exportPrivateKeyInput');
     const publicInput = document.getElementById('exportPublicKeyInput');
-    if (privateInput) privateInput.value = '';
-    if (publicInput) publicInput.value = '';
+    if (privateInput) {
+      privateInput.value = '';
+      privateInput.checked = false;
+    }
+    if (publicInput) {
+      publicInput.value = '';
+      publicInput.checked = false;
+    }
+  };
+
+  // Clear all file-related states and inputs
+  const clearAllFileStates = () => {
+    setExportPrivateKeyFile(null);
+    setExportPublicKeyFile(null);
+    setIsUploadingKeys(false);
+    
+    // Clear file inputs
+    setTimeout(() => {
+      const privateInput = document.getElementById('exportPrivateKeyInput');
+      const publicInput = document.getElementById('exportPublicKeyInput');
+      if (privateInput) {
+        privateInput.value = '';
+        privateInput.checked = false;
+      }
+      if (publicInput) {
+        publicInput.value = '';
+        publicInput.checked = false;
+      }
+    }, 0);
   };
 
   const handleExportPrivateKeyUpload = (event) => {
@@ -699,9 +771,7 @@ export default function App() {
 
     try {
       const duplicateService = new DuplicateDetectionService();
-      const duplicates = duplicateService.detectDuplicates(components, {
-        methods: ['exact', 'nameVersion', 'purl', 'hash']
-      });
+      const duplicates = duplicateService.detectDuplicates(components);
       
       setDuplicateCount(duplicates.length);
       
@@ -861,7 +931,12 @@ export default function App() {
           <div className="sidebar-section digital-signatures">
             <h3>Signature Verification</h3>
             <button
-              onClick={() => setShowSignatureManager(!showSignatureManager)}
+              onClick={() => {
+                setShowSignatureManager(true);
+                if (showDuplicateDetector) {
+                  setShowDuplicateDetector(false);
+                }
+              }}
               className="sidebar-btn"
               title="Verify digital signatures"
             >
@@ -873,7 +948,12 @@ export default function App() {
             <div className="sidebar-section duplicate-detection">
               <h3>Data Quality</h3>
               <button
-                onClick={() => setShowDuplicateDetector(!showDuplicateDetector)}
+                onClick={() => {
+                  setShowDuplicateDetector(true);
+                  if (showSignatureManager) {
+                    setShowSignatureManager(false);
+                  }
+                }}
                 className={`sidebar-btn ${duplicateCount > 0 ? 'has-duplicates' : ''}`}
                 title="Detect and manage duplicate components"
               >
@@ -946,21 +1026,69 @@ export default function App() {
           {!editComponent && components.length > 0 && !showSignatureManager && (
             <>
               <h2 className={`main-heading ${isNewUpload ? 'heading-fresh' : ''}`}>
-                Components <span className="component-count">({components.length} loaded)</span>
+                Components <span className="component-count">({filteredComponents.length} {nameFilter ? 'filtered' : 'loaded'})</span>
               </h2>
               <div className={`table-wrapper ${isNewUpload ? 'new-upload' : ''}`}>
                 <table key={tableKey} className={`component-table ${isNewUpload ? 'table-fresh' : ''}`}>
                   <thead>
                     <tr>
                       <th className="table-header">#</th>
-                      <th className="table-header">Component Name</th>
+                      <th className="table-header">
+                        <div className="header-with-filter">
+                          Component Name
+                          <button
+                            className="filter-icon"
+                            onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                            title="Filter components by name"
+                          >
+                            ☰
+                          </button>
+                        </div>
+                      </th>
                       <th className="table-header">Version</th>
                       <th className="table-header">Description</th>
                       <th className="table-header">Action</th>
                     </tr>
+                    {showFilterDropdown && (
+                      <tr className="filter-row">
+                        <td colSpan="5" className="filter-cell">
+                          <div className="table-filter-controls">
+                            <input
+                              type="text"
+                              placeholder="Search by component name..."
+                              value={nameFilter}
+                              onChange={(e) => setNameFilter(e.target.value)}
+                              className="table-filter-input"
+                              autoFocus
+                            />
+                            {nameFilter && (
+                              <button
+                                onClick={() => setNameFilter('')}
+                                className="table-clear-filter-btn"
+                                title="Clear filter"
+                              >
+                                ✕
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setShowFilterDropdown(false)}
+                              className="table-close-filter-btn"
+                              title="Close filter"
+                            >
+                              Close
+                            </button>
+                          </div>
+                          {nameFilter && (
+                            <div className="table-filter-results">
+                              Showing {filteredComponents.length} of {components.length} components
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
                   </thead>
                   <tbody>
-                    {components.map((c, i) => (
+                    {filteredComponents.map((c, i) => (
                       <tr
                         key={i}
                         className={`table-row ${
@@ -1082,7 +1210,7 @@ export default function App() {
       {/* Export Dialog */}
       {showExportDialog && (
         <div className="confirmation-overlay">
-          <div className="confirmation-dialog export-dialog">
+          <div className="confirmation-dialog export-dialog" key={dialogResetKey}>
             <h4>📤 Export SBOM</h4>
             <p>Choose how you want to export your SBOM:</p>
             
@@ -1094,7 +1222,11 @@ export default function App() {
                     name="exportType"
                     value="without"
                     checked={!exportWithSignature}
-                    onChange={() => setExportWithSignature(false)}
+                    onChange={() => {
+                      setExportWithSignature(false);
+                      setExportKeyOption('generate');
+                      clearAllFileStates();
+                    }}
                   />
                   <span className="option-label">
                     <strong>Export without signature</strong>
@@ -1110,7 +1242,11 @@ export default function App() {
                     name="exportType"
                     value="with"
                     checked={exportWithSignature}
-                    onChange={() => setExportWithSignature(true)}
+                    onChange={() => {
+                      setExportWithSignature(true);
+                      setExportKeyOption('generate');
+                      clearAllFileStates();
+                    }}
                   />
                   <span className="option-label">
                     <strong>Export with digital signature</strong>
@@ -1130,7 +1266,10 @@ export default function App() {
                       name="keyOption"
                       value="generate"
                       checked={exportKeyOption === 'generate'}
-                      onChange={() => setExportKeyOption('generate')}
+                      onChange={() => {
+                        setExportKeyOption('generate');
+                        clearAllFileStates();
+                      }}
                     />
                     <span>Generate new key pair</span>
                   </label>
@@ -1142,7 +1281,10 @@ export default function App() {
                       name="keyOption"
                       value="upload"
                       checked={exportKeyOption === 'upload'}
-                      onChange={() => setExportKeyOption('upload')}
+                      onChange={() => {
+                        setExportKeyOption('upload');
+                        clearAllFileStates();
+                      }}
                     />
                     <span>Upload your own keys</span>
                   </label>

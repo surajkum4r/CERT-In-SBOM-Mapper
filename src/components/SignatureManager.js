@@ -98,7 +98,7 @@ const SignatureManager = ({ sbom, onBackToTable }) => {
             className="btn btn-secondary back-btn"
             title="Back to Components Table"
           >
-            ← Back to Table
+            ← Back to Components
           </button>
         </div>
         <p>Verify the digital signature of your SBOM using the signature file</p>

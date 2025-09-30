@@ -407,26 +407,27 @@
   background: #f8f9fa;
   border: 1px solid #e9ecef;
   border-radius: 4px;
-  padding: 12px;
-  margin-top: 16px;
+  padding: 8px 10px;
+  margin-top: 8px;
 }
 
 .key-format-info p {
-  margin: 0 0 8px 0;
+  margin: 0 0 4px 0;
   font-weight: 500;
   color: #495057;
+  font-size: 13px;
 }
 
 .key-format-info ul {
   margin: 0;
   padding-left: 16px;
   color: #6c757d;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.3;
 }
 
 .key-format-info li {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .btn-danger:disabled {
@@ -438,7 +439,35 @@
 /* Export Dialog Styles */
 .export-dialog {
   max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
   text-align: left;
+}
+
+/* Responsive design for smaller screens */
+@media (max-height: 700px) {
+  .export-dialog {
+    max-height: 95vh;
+    padding: 16px;
+  }
+  
+  .inline-key-upload {
+    padding: 8px;
+  }
+  
+  .key-format-info {
+    margin-top: 8px;
+  }
+  
+  .key-format-info ul {
+    margin: 4px 0;
+    padding-left: 16px;
+  }
+  
+  .key-format-info li {
+    font-size: 12px;
+    margin-bottom: 2px;
+  }
 }
 
 .export-dialog h4 {
