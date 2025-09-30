@@ -212,6 +212,10 @@ export default function App() {
           setEditComponent(null);
           setVulnerabilities(json.vulnerabilities || []);
           
+          // Reset filter when new file is uploaded
+          setNameFilter('');
+          setShowFilterDropdown(false);
+          
           // Hide signature manager and show main table when new file is uploaded
           setShowSignatureManager(false);
           
