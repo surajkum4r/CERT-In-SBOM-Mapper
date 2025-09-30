@@ -35,8 +35,8 @@ class PropertyMapperService {
            (!ghKey || cacheService.has(ghKey));
   }
 
-  // Fast synchronous processing when all data is cached
-  buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities) {
+  // Fast processing when all data is cached (now async due to EOL date fetching)
+  async buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities) {
     // Get cached data directly
     const pkgData = pkgInfo?.ecosystem === "npm" 
       ? cacheService.get(cacheService.generateKey('npm', pkgInfo.name))
@@ -48,7 +48,7 @@ class PropertyMapperService {
     
     const vulnData = cacheService.get(cacheService.generateKey('vuln', pkgInfo.ecosystem, pkgInfo.name));
     const ghData = repoUrl ? cacheService.get(cacheService.generateKey('github', repoUrl.split('/').slice(-2).join('/'))) : null;
-    const eolDate = this.lifecycle.fetchEol(component, pkgInfo); // This is synchronous
+    const eolDate = await this.lifecycle.fetchEol(component, pkgInfo); // This is async
 
     // Build properties using cached data
     const props = {};
@@ -285,9 +285,9 @@ class PropertyMapperService {
       const pkgInfo = this.pkg.extractPackageInfo(component);
       const repoUrl = (component.externalReferences || []).find((r) => r.type === "vcs" || r.type === "repository")?.url || null;
 
-      // Fast path: if all data is cached, process synchronously
+      // Fast path: if all data is cached, process asynchronously
       if (this.isAllDataCached(component, pkgInfo, repoUrl)) {
-        const result = this.buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities);
+        const result = await this.buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities);
         // Cache the complete result for future use
         cacheService.setComponentResult(component, sbomVulnerabilities, result);
         return result;

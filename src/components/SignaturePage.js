@@ -29,9 +29,21 @@ const SignaturePage = () => {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const showNotification = (message, type = 'error', duration = 5000) => {
-    setNotification({ message, type, duration });
-    setTimeout(() => setNotification(null), duration);
+  const showNotification = (message, type = 'error', duration = 5000, showRedirectButton = false) => {
+    setNotification({ message, type, duration, showRedirectButton });
+    if (duration > 0) {
+      setTimeout(() => setNotification(null), duration);
+    }
+  };
+
+  const handleManualRedirect = () => {
+    // Try to redirect the parent window first, then fallback to current window
+    if (window.opener && !window.opener.closed) {
+      window.opener.location.href = '/';
+      window.close();
+    } else {
+      window.location.href = '/';
+    }
   };
 
   const handleSignatureUpdate = (signedSBOM) => {
@@ -60,7 +72,34 @@ const SignaturePage = () => {
         if (json.components) {
           setSbom(json);
           sessionStorage.setItem('current_sbom', JSON.stringify(json));
-          showNotification("SBOM loaded successfully!", 'success');
+          showNotification("SBOM loaded successfully! Redirecting to main view...", 'success');
+          
+          // Show redirect button as backup
+          setTimeout(() => {
+            setNotification({
+              message: "If you're not redirected automatically, click the button below to go to the main view.",
+              type: 'info',
+              duration: 10000,
+              showRedirectButton: true
+            });
+          }, 2000);
+          
+          // Redirect to main app after a short delay
+          setTimeout(() => {
+            // Store SBOM in sessionStorage for the main app to pick up
+            sessionStorage.setItem('current_sbom', JSON.stringify(json));
+            sessionStorage.setItem('sbom_upload_redirect', 'true');
+            
+            // Try to redirect the parent window first, then fallback to current window
+            if (window.opener && !window.opener.closed) {
+              // Redirect the parent window to main app
+              window.opener.location.href = '/';
+              window.close();
+            } else {
+              // If no parent window or parent is closed, redirect current window
+              window.location.href = '/';
+            }
+          }, 1500);
         } else {
           showNotification("Invalid SBOM file. Must contain components array.", 'error');
         }
@@ -128,6 +167,23 @@ const SignaturePage = () => {
       {notification && (
         <div className={`notification ${notification.type}`}>
           {notification.message}
+          {notification.showRedirectButton && (
+            <button 
+              onClick={handleManualRedirect}
+              className="redirect-button"
+              style={{
+                marginLeft: '10px',
+                padding: '5px 10px',
+                backgroundColor: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Go to Main View
+            </button>
+          )}
         </div>
       )}
     </div>

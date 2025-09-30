@@ -67,7 +67,7 @@ class SignatureService {
   async signSBOM(sbomData, privateKey) {
     try {
       // Convert SBOM to canonical JSON string
-      const canonicalJson = this.canonicalizeJSON(sbomData);
+      const canonicalJson = JSON.stringify(this.canonicalizeJSON(sbomData));
       
       // Create signature
       const signature = await crypto.subtle.sign(
@@ -98,7 +98,7 @@ class SignatureService {
   async verifySBOM(sbomData, signature, publicKey) {
     try {
       // Convert SBOM to canonical JSON string
-      const canonicalJson = this.canonicalizeJSON(sbomData);
+      const canonicalJson = JSON.stringify(this.canonicalizeJSON(sbomData));
       
       // Convert base64 signature to ArrayBuffer
       const signatureBuffer = this.base64ToArrayBuffer(signature.value);
@@ -125,14 +125,33 @@ class SignatureService {
     }
   }
 
-  // Create canonical JSON (deterministic ordering)
+  // Create canonical JSON (deterministic ordering for all nested objects)
   canonicalizeJSON(obj) {
-    return JSON.stringify(obj, Object.keys(obj).sort());
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.canonicalizeJSON(item));
+    }
+    
+    if (typeof obj === 'object') {
+      const sortedKeys = Object.keys(obj).sort();
+      const canonicalObj = {};
+      for (const key of sortedKeys) {
+        canonicalObj[key] = this.canonicalizeJSON(obj[key]);
+      }
+      return canonicalObj;
+    }
+    
+    return obj;
   }
 
   // Convert base64 to ArrayBuffer
   base64ToArrayBuffer(base64) {
-    const binaryString = atob(base64);
+    // Remove newlines that were added during encoding
+    const cleanBase64 = base64.replace(/\s/g, '');
+    const binaryString = atob(cleanBase64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);

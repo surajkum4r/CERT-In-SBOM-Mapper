@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ComponentEditor } from "./ComponentEditor";
 import SignatureManager from "./SignatureManager";
 import ExcelJS from "exceljs";
@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 import { Pencil } from "lucide-react";
 import "../styles/components/AppView.css";
 import PropertyMapperService from "../services/propertyMapperService";
+import StandaloneSignatureService from "../services/standaloneSignatureService";
 import ProgressBar from "./ProgressBar";
 import Notification from "./Notification";
 import errorService from "../services/errorService";
@@ -55,6 +56,62 @@ export default function App() {
   const [isNewUpload, setIsNewUpload] = useState(false);
   const [isCacheDropdownOpen, setIsCacheDropdownOpen] = useState(false);
   const [showSignatureManager, setShowSignatureManager] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportWithSignature, setExportWithSignature] = useState(false);
+  const [exportKeyOption, setExportKeyOption] = useState('generate'); // 'generate' or 'upload'
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportPrivateKeyFile, setExportPrivateKeyFile] = useState(null);
+  const [exportPublicKeyFile, setExportPublicKeyFile] = useState(null);
+  const [isUploadingKeys, setIsUploadingKeys] = useState(false);
+
+  // Handle redirect from signature page
+  useEffect(() => {
+    // Check if we're being redirected from signature page with a new SBOM
+    const redirectFlag = sessionStorage.getItem('sbom_upload_redirect');
+    const savedSBOM = sessionStorage.getItem('current_sbom');
+    
+    if (redirectFlag === 'true' && savedSBOM) {
+      try {
+        const json = JSON.parse(savedSBOM);
+        if (json.components) {
+          const updatedComponents = json.components.map((component) => {
+            let props = component.properties ? [...component.properties] : [];
+            CERT_IN_PROPERTIES.forEach(({ key }) => {
+              if (!props.find((p) => p.name === key)) {
+                props.push({ name: key, value: "NA" });
+              }
+            });
+            return { ...component, properties: props };
+          });
+          json.components = updatedComponents;
+
+          setSbom(json);
+          setComponents(updatedComponents);
+          setSelectedIndex(null);
+          setEditComponent(null);
+          setVulnerabilities(json.vulnerabilities || []);
+          
+          // Hide signature manager and show main table
+          setShowSignatureManager(false);
+          
+          // Trigger fresh table appearance
+          setTableKey(prev => prev + 1);
+          setIsNewUpload(true);
+          
+          // Reset new upload state after animation
+          setTimeout(() => setIsNewUpload(false), 600);
+          
+          // Clear the redirect flag
+          sessionStorage.removeItem('sbom_upload_redirect');
+          
+          showNotification("SBOM loaded successfully! Redirected from signature page.", 'success');
+        }
+      } catch (error) {
+        console.error('Failed to load SBOM from signature page redirect:', error);
+        sessionStorage.removeItem('sbom_upload_redirect');
+      }
+    }
+  }, []);
 
   // Helper functions for notifications
   const showNotification = (message, type = 'error', duration = 5000) => {
@@ -102,13 +159,23 @@ export default function App() {
     }
 
     // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      showNotification('File is too large. Please upload a file smaller than 10MB.', 'error');
-      // Clear input on error too
+    const maxSizeInMB = 10;
+    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+    const fileSizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+    
+    if (file.size > maxSizeInBytes) {
+      showNotification(
+        `File too large: ${fileSizeInMB}MB exceeds the 10MB limit. Please compress or split your SBOM file.`, 
+        'error'
+      );
+      // Clear input on error
       e.target.value = '';
       return;
     }
 
+    // Show file processing notification
+    showNotification(`Processing file (${fileSizeInMB}MB)...`, 'info', 3000);
+    
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -130,6 +197,9 @@ export default function App() {
           setSelectedIndex(null);
           setEditComponent(null);
           setVulnerabilities(json.vulnerabilities || []);
+          
+          // Hide signature manager and show main table when new file is uploaded
+          setShowSignatureManager(false);
           
           // Trigger fresh table appearance
           setTableKey(prev => prev + 1);
@@ -326,9 +396,116 @@ export default function App() {
 
   const exportSbom = () => {
     if (!sbom) return;
+    setShowExportDialog(true);
+  };
+
+  const handleExportWithSignature = async () => {
+    if (!sbom) return;
+    
+    setIsExporting(true);
+    try {
+      const signatureService = new StandaloneSignatureService();
+      
+      // Check if keys exist, if not generate or upload based on option
+      if (!signatureService.hasKeys()) {
+        if (exportKeyOption === 'generate') {
+          await signatureService.generateAndSaveKeys();
+          showNotification("Generated new key pair for signing", 'success');
+        } else if (exportKeyOption === 'upload') {
+          // Check if files are selected for inline upload
+          if (!exportPrivateKeyFile || !exportPublicKeyFile) {
+            showNotification("Please select both private and public key files", 'error');
+            return;
+          }
+          // Upload the keys
+          const result = await signatureService.uploadKeyPair(exportPrivateKeyFile, exportPublicKeyFile);
+          showNotification(result.message, 'success');
+        } else {
+          showNotification("Please select a key option", 'error');
+          return;
+        }
+      }
+      
+      // Sign the SBOM
+      const result = await signatureService.signSBOM(sbom, 'cyclonedx-sbom-updated.json');
+      
+      // Store signature file content for potential verification
+      sessionStorage.setItem('sbom_signature_file', JSON.stringify(result.signatureFile.content));
+      
+      // Export the original SBOM (unchanged)
+      const dataStr = JSON.stringify(result.sbom, null, 2);
+      const blob = new Blob([dataStr], { type: "application/json" });
+      saveAs(blob, "cyclonedx-sbom-updated.json");
+      
+      // Export the signature file
+      const signatureStr = JSON.stringify(result.signatureFile.content, null, 2);
+      const signatureBlob = new Blob([signatureStr], { type: "application/json" });
+      saveAs(signatureBlob, result.signatureFile.filename);
+      
+      showNotification("SBOM exported with signature successfully!", 'success');
+      setShowExportDialog(false);
+    } catch (error) {
+      showNotification("Failed to export with signature: " + error.message, 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportWithoutSignature = () => {
+    if (!sbom) return;
+    
     const dataStr = JSON.stringify(sbom, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
     saveAs(blob, "cyclonedx-sbom-updated.json");
+    
+    showNotification("SBOM exported successfully!", 'success');
+    setShowExportDialog(false);
+  };
+
+  const cancelExport = () => {
+    setShowExportDialog(false);
+    setExportWithSignature(false);
+    setExportKeyOption('generate');
+    setExportPrivateKeyFile(null);
+    setExportPublicKeyFile(null);
+    // Reset file inputs
+    const privateInput = document.getElementById('exportPrivateKeyInput');
+    const publicInput = document.getElementById('exportPublicKeyInput');
+    if (privateInput) privateInput.value = '';
+    if (publicInput) publicInput.value = '';
+  };
+
+  const handleExportPrivateKeyUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setExportPrivateKeyFile(file);
+    }
+  };
+
+  const handleExportPublicKeyUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setExportPublicKeyFile(file);
+    }
+  };
+
+  const uploadKeysForExport = async () => {
+    if (!exportPrivateKeyFile || !exportPublicKeyFile) {
+      showNotification("Please select both private and public key files.", 'error');
+      return;
+    }
+
+    setIsUploadingKeys(true);
+    try {
+      const signatureService = new StandaloneSignatureService();
+      const result = await signatureService.uploadKeyPair(exportPrivateKeyFile, exportPublicKeyFile);
+      showNotification(result.message, 'success');
+      setExportKeyOption('upload'); // Switch to upload option
+    } catch (error) {
+      showNotification(error.message, 'error');
+    } finally {
+      setIsUploadingKeys(false);
+    }
   };
 
   const exportCsv = () => {
@@ -507,33 +684,8 @@ export default function App() {
   };
 
   const openSignaturePage = () => {
-    // Save current SBOM to sessionStorage for better security
-    if (sbom) {
-      try {
-        sessionStorage.setItem('current_sbom', JSON.stringify(sbom));
-      } catch (error) {
-        console.warn('Failed to save SBOM to session storage:', error);
-        showNotification('Failed to prepare SBOM for signing. Please try again.', 'error');
-        return;
-      }
-    }
-    
-    // Open signature page in new window
-    const signatureWindow = window.open(
-      '/signature.html',
-      'signatureWindow',
-      'width=1200,height=800,scrollbars=yes,resizable=yes'
-    );
-    
-    // Send SBOM data to the new window
-    if (signatureWindow) {
-      signatureWindow.addEventListener('load', () => {
-        signatureWindow.postMessage({
-          type: 'SBOM_DATA',
-          sbom: sbom
-        }, '*');
-      });
-    }
+    // Instead of opening a separate HTML file, show the signature manager in the current app
+    setShowSignatureManager(true);
   };
 
   const showContextMenu = (event, type) => {
@@ -554,7 +706,7 @@ export default function App() {
 
     const menuItems = [
       {
-        text: 'Open in New Tab',
+        text: 'Open in Current Tab',
         action: () => {
           if (type === 'signature-new') {
             openSignaturePage();
@@ -567,6 +719,7 @@ export default function App() {
         text: 'Open in New Window',
         action: () => {
           if (type === 'signature-new') {
+            // For signature, we'll open in current tab since it's now integrated
             openSignaturePage();
           } else {
             const newWindow = window.open('', '_blank', 'width=1200,height=800');
@@ -646,63 +799,64 @@ export default function App() {
             onChange={onFileChange}
             className="hidden-input"
           />
-          <p className="sidebar-note">Note: It supports CycloneDX only.</p>
+          <p className="sidebar-note">Note: It supports CycloneDX only. Maximum file size limit is 10MB.</p>
           
-          {/* Cache Management Dropdown */}
-          <div className="cache-management-compact">
-            <button 
-              onClick={toggleCacheDropdown}
-              className="cache-toggle-btn"
-              title="Cache Management"
+          <div className="sidebar-section digital-signatures">
+            <h3>Signature Verification</h3>
+            <button
+              onClick={() => setShowSignatureManager(!showSignatureManager)}
+              className="sidebar-btn"
+              title="Verify digital signatures"
             >
-              <span>Cache Management</span>
-              <span className={`dropdown-arrow ${isCacheDropdownOpen ? 'open' : ''}`}>▼</span>
+              ✅ Verify Signature
             </button>
-            
-            {isCacheDropdownOpen && (
-              <div className="cache-dropdown-content">
-                <button 
-                  onClick={getCacheInfo}
-                  className="cache-btn info"
-                  title="Show cache information"
-                >
-                  Cache Info
-                </button>
-                <button 
-                  onClick={clearCache}
-                  className="cache-btn clear"
-                  title="Clear all cached data"
-                >
-                  Clear Cache
-                </button>
-                <p className="cache-note">
-                  Cache persists for 24 hours
-                </p>
-              </div>
-            )}
           </div>
           
-          {sbom && (
-            <div className="sidebar-section digital-signatures">
-              <h3>Digital Signatures</h3>
-              <button
-                onClick={() => setShowSignatureManager(!showSignatureManager)}
-                className="sidebar-btn"
-                title="Toggle Digital Signature Management"
+          {/* Bottom section with cache management and reference link */}
+          <div className="sidebar-bottom">
+            {/* Cache Management Dropdown */}
+            <div className="cache-management-compact">
+              <button 
+                onClick={toggleCacheDropdown}
+                className="cache-toggle-btn"
+                title="Cache Management"
               >
-                🔐 Digital Signatures
+                <span>Cache Management</span>
+                <span className={`dropdown-arrow ${isCacheDropdownOpen ? 'open' : ''}`}>▼</span>
               </button>
+              
+              {isCacheDropdownOpen && (
+                <div className="cache-dropdown-content">
+                  <button 
+                    onClick={getCacheInfo}
+                    className="cache-btn info"
+                    title="Show cache information"
+                  >
+                    Cache Info
+                  </button>
+                  <button 
+                    onClick={clearCache}
+                    className="cache-btn clear"
+                    title="Clear all cached data"
+                  >
+                    Clear Cache
+                  </button>
+                  <p className="cache-note">
+                    Cache persists for 24 hours
+                  </p>
+                </div>
+              )}
             </div>
-          )}
-          
-          <a
-            href="https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="sidebar-link"
-          >
-            Reference: SBOM Guidelines
-          </a>
+            
+            <a
+              href="https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="sidebar-link"
+            >
+              Reference: SBOM Guidelines
+            </a>
+          </div>
         </aside>
 
         {/* Main Body */}
@@ -740,6 +894,7 @@ export default function App() {
                         <td
                           className="table-cell truncate"
                           title={c.description || "(No description)"}
+                          data-full-text={c.description || "(No description)"}
                         >
                           {c.description || "(No description)"}
                         </td>
@@ -777,15 +932,26 @@ export default function App() {
             />
           )}
 
-          {sbom && !editComponent && (
+
+          {/* Digital Signature Verification */}
+          {!editComponent && showSignatureManager && (
+            <div className="signature-wrapper">
+              <SignatureManager 
+                sbom={sbom} 
+                onBackToTable={() => setShowSignatureManager(false)}
+              />
+            </div>
+          )}
+
+          {sbom && !editComponent && !showSignatureManager && (
             <div className="export-actions">
               <button
                 onClick={exportSbom}
                 className="export-button green"
-                title="Export the updated CycloneDX SBOM JSON file"
+                title="Export SBOM with optional digital signature"
                 disabled={fetchProgress !== null}
               >
-                Export SBOM JSON
+                Export SBOM
               </button>
               <button
                 onClick={exportCsv}
@@ -806,22 +972,150 @@ export default function App() {
             </div>
           )}
 
-          {/* Digital Signature Management */}
-          {sbom && !editComponent && showSignatureManager && (
-            <div className="signature-wrapper">
-              <SignatureManager 
-                sbom={sbom} 
-                onSignatureUpdate={(signedSBOM) => {
-                  setSbom(signedSBOM);
-                  showNotification("SBOM signature updated successfully!", 'success');
-                }}
-                onBackToTable={() => setShowSignatureManager(false)}
-              />
-            </div>
-          )}
-
         </main>
       </div>
+      
+      {/* Export Dialog */}
+      {showExportDialog && (
+        <div className="confirmation-overlay">
+          <div className="confirmation-dialog export-dialog">
+            <h4>📤 Export SBOM</h4>
+            <p>Choose how you want to export your SBOM:</p>
+            
+            <div className="export-options">
+              <div className="export-option">
+                <label>
+                  <input
+                    type="radio"
+                    name="exportType"
+                    value="without"
+                    checked={!exportWithSignature}
+                    onChange={() => setExportWithSignature(false)}
+                  />
+                  <span className="option-label">
+                    <strong>Export without signature</strong>
+                    <small>Standard JSON export</small>
+                  </span>
+                </label>
+              </div>
+              
+              <div className="export-option">
+                <label>
+                  <input
+                    type="radio"
+                    name="exportType"
+                    value="with"
+                    checked={exportWithSignature}
+                    onChange={() => setExportWithSignature(true)}
+                  />
+                  <span className="option-label">
+                    <strong>Export with digital signature</strong>
+                    <small>Creates both SBOM and signature files</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+            
+            {exportWithSignature && (
+              <div className="signature-options">
+                <p><strong>Key Options:</strong></p>
+                <div className="key-option">
+                  <label>
+                    <input
+                      type="radio"
+                      name="keyOption"
+                      value="generate"
+                      checked={exportKeyOption === 'generate'}
+                      onChange={() => setExportKeyOption('generate')}
+                    />
+                    <span>Generate new key pair</span>
+                  </label>
+                </div>
+                <div className="key-option">
+                  <label>
+                    <input
+                      type="radio"
+                      name="keyOption"
+                      value="upload"
+                      checked={exportKeyOption === 'upload'}
+                      onChange={() => setExportKeyOption('upload')}
+                    />
+                    <span>Upload your own keys</span>
+                  </label>
+                </div>
+                
+                {exportKeyOption === 'upload' && (
+                  <div className="inline-key-upload">
+                    <div className="file-input-group">
+                      <label htmlFor="exportPrivateKeyInput">Private Key (.pem, .key):</label>
+                      <input
+                        id="exportPrivateKeyInput"
+                        type="file"
+                        accept=".pem,.key,.txt"
+                        onChange={handleExportPrivateKeyUpload}
+                        className="file-input"
+                      />
+                      {exportPrivateKeyFile && (
+                        <span className="file-selected">✅ {exportPrivateKeyFile.name}</span>
+                      )}
+                    </div>
+                    
+                    <div className="file-input-group">
+                      <label htmlFor="exportPublicKeyInput">Public Key (.pem, .pub):</label>
+                      <input
+                        id="exportPublicKeyInput"
+                        type="file"
+                        accept=".pem,.pub,.txt"
+                        onChange={handleExportPublicKeyUpload}
+                        className="file-input"
+                      />
+                      {exportPublicKeyFile && (
+                        <span className="file-selected">✅ {exportPublicKeyFile.name}</span>
+                      )}
+                    </div>
+                    
+                    <div className="upload-keys-section">
+                      <button 
+                        onClick={uploadKeysForExport}
+                        className="btn btn-secondary btn-sm"
+                        disabled={isUploadingKeys || !exportPrivateKeyFile || !exportPublicKeyFile}
+                      >
+                        {isUploadingKeys ? 'Uploading...' : 'Upload Keys'}
+                      </button>
+                    </div>
+                    
+                    <div className="key-format-info">
+                      <p><strong>Key Format Requirements:</strong></p>
+                      <ul>
+                        <li>PEM format (-----BEGIN PRIVATE KEY----- / -----BEGIN PUBLIC KEY-----)</li>
+                        <li>RSA keys (2048-bit or higher recommended)</li>
+                        <li>Private key should be in PKCS#8 format</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="confirmation-buttons">
+              <button 
+                onClick={exportWithSignature ? handleExportWithSignature : handleExportWithoutSignature}
+                className="btn btn-primary"
+                disabled={isExporting || isUploadingKeys}
+              >
+                {isExporting ? 'Exporting...' : isUploadingKeys ? 'Uploading Keys...' : 'Export SBOM'}
+              </button>
+              <button 
+                onClick={cancelExport}
+                className="btn btn-secondary"
+                disabled={isExporting}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Notification Component */}
       {notification && (

@@ -36,6 +36,13 @@
   padding: 8px;
 }
 
+.key-options {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
 .key-generation p {
   color: #6c757d;
   margin-bottom: 6px;
@@ -347,8 +354,278 @@
   border-color: #bd2130;
 }
 
+/* Key Upload Dialog Styles */
+.key-upload-dialog {
+  max-width: 500px;
+  text-align: left;
+}
+
+.key-upload-dialog h4 {
+  color: #007bff;
+  text-align: center;
+}
+
+.key-upload-form {
+  margin: 16px 0;
+}
+
+.file-input-group {
+  margin-bottom: 16px;
+}
+
+.file-input-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #495057;
+}
+
+.file-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background: white;
+  font-size: 14px;
+}
+
+.file-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.file-selected {
+  display: block;
+  margin-top: 4px;
+  color: #28a745;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.key-format-info {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 12px;
+  margin-top: 16px;
+}
+
+.key-format-info p {
+  margin: 0 0 8px 0;
+  font-weight: 500;
+  color: #495057;
+}
+
+.key-format-info ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #6c757d;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.key-format-info li {
+  margin-bottom: 4px;
+}
+
 .btn-danger:disabled {
   background: #dc3545;
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Export Dialog Styles */
+.export-dialog {
+  max-width: 500px;
+  text-align: left;
+}
+
+.export-dialog h4 {
+  color: #007bff;
+  text-align: center;
+}
+
+.export-options {
+  margin: 16px 0;
+}
+
+.export-option {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  background: #f8f9fa;
+  transition: all 0.2s;
+}
+
+.export-option:hover {
+  border-color: #007bff;
+  background: #f0f8ff;
+}
+
+.export-option label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.export-option input[type="radio"] {
+  margin: 0;
+  margin-top: 2px;
+}
+
+.option-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.option-label strong {
+  color: #495057;
+  font-size: 14px;
+}
+
+.option-label small {
+  color: #6c757d;
+  font-size: 12px;
+}
+
+.signature-options {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.signature-options p {
+  margin: 0 0 8px 0;
+  font-weight: 500;
+  color: #495057;
+}
+
+.key-option {
+  margin-bottom: 8px;
+}
+
+.key-option label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.key-option input[type="radio"] {
+  margin: 0;
+}
+
+.upload-hint {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+}
+
+.upload-hint p {
+  margin: 0;
+  color: #856404;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Inline Key Upload Styles */
+.inline-key-upload {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+}
+
+.upload-keys-section {
+  margin: 12px 0;
+  text-align: center;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+/* Signature File Upload Styles */
+.signature-file-upload {
+  margin: 12px 0;
+}
+
+.verification-info {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+}
+
+.verification-info p {
+  margin: 0 0 8px 0;
+  font-weight: 500;
+  color: #495057;
+}
+
+.verification-info ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #6c757d;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.verification-info li {
+  margin-bottom: 4px;
+}
+
+.verification-note {
+  margin-top: 16px;
+  padding: 12px;
+  background: #e3f2fd;
+  border: 1px solid #bbdefb;
+  border-radius: 6px;
+}
+
+.verification-note p {
+  margin: 0 0 8px 0;
+  font-weight: 500;
+  color: #1976d2;
+}
+
+.verification-note ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #1976d2;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.verification-note li {
+  margin-bottom: 4px;
+}
+
+.file-upload-note {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+}
+
+.file-upload-note p {
+  margin: 0;
+  color: #856404;
+  font-size: 13px;
+  line-height: 1.4;
 }

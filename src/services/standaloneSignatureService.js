@@ -138,20 +138,48 @@ class StandaloneSignatureService {
       .trim();
   }
 
-  // Sign SBOM using CycloneDX XML signature format
-  async signSBOM(sbomData) {
+  // Sign SBOM and create separate signature file (like CycloneDX CLI)
+  async signSBOM(sbomData, filename = 'sbom.json') {
     try {
-      // Load private key if not already loaded
-      if (!this.privateKey) {
-        const keys = this.loadKeys();
-        if (!keys) {
-          throw new Error('No private key found');
-        }
-        this.privateKey = await this.importPrivateKey(keys.privateKey);
+      // Always load keys from storage to ensure we have the latest keys
+      const keys = this.loadKeys();
+      if (!keys) {
+        throw new Error('No private key found');
+      }
+      
+      // Debug: Log key data
+      console.log('Loaded keys for signing:', {
+        hasPrivateKey: !!keys.privateKey,
+        hasPublicKey: !!keys.publicKey,
+        privateKeyLength: keys.privateKey?.length || 0,
+        publicKeyLength: keys.publicKey?.length || 0,
+        privateKeyPreview: keys.privateKey?.substring(0, 50) + '...'
+      });
+      
+      // Import private key (always reload from storage)
+      let privateKey;
+      try {
+        privateKey = await this.importPrivateKey(keys.privateKey);
+        console.log('Successfully imported private key');
+      } catch (error) {
+        console.error('Failed to import private key:', error);
+        throw new Error('Failed to import private key: ' + error.message);
       }
 
-      // Create canonical JSON representation (not XML for now)
-      const canonicalJson = JSON.stringify(sbomData, Object.keys(sbomData).sort());
+      // Clean SBOM data (no need to remove signature since we're not embedding)
+      const cleanedSBOM = this.cleanSBOMData(sbomData);
+      console.log('Cleaned SBOM data (removed Promise objects)');
+      
+      // Create canonical JSON from the cleaned SBOM
+      const canonicalJson = JSON.stringify(this.canonicalizeJSON(cleanedSBOM));
+      
+      // Debug: Log canonical JSON for debugging
+      console.log('Canonical JSON for signing:', canonicalJson);
+      
+      console.log('About to sign with:');
+      console.log('- Private key:', privateKey);
+      console.log('- Canonical JSON length:', canonicalJson.length);
+      console.log('- Canonical JSON preview:', canonicalJson.substring(0, 100) + '...');
       
       // Create signature using Web Crypto API
       const signature = await crypto.subtle.sign(
@@ -159,20 +187,46 @@ class StandaloneSignatureService {
           name: 'RSA-PSS',
           saltLength: 32,
         },
-        this.privateKey,
+        privateKey,
         new TextEncoder().encode(canonicalJson)
       );
+      
+      console.log('Signature created, length:', signature.byteLength);
 
       // Convert signature to base64
       const signatureBase64 = this.arrayBufferToBase64(signature);
       
-      // Create signature element
-      const signatureElement = this.createXMLSignature(signatureBase64, canonicalJson);
+      // Debug: Log signature data
+      console.log('Created signature:', {
+        algorithm: this.signatureAlgorithm,
+        valueLength: signatureBase64.length,
+        valuePreview: signatureBase64.substring(0, 50) + '...',
+        fullSignature: signatureBase64
+      });
       
-      // Add signature to SBOM
-      const signedSBOM = this.addXMLSignatureToSBOM(sbomData, signatureElement);
+      // Create separate signature file content (like CycloneDX CLI)
+      const signatureFileContent = {
+        algorithm: this.signatureAlgorithm,
+        timestamp: new Date().toISOString(),
+        value: signatureBase64,
+        canonicalJson: canonicalJson
+      };
       
-      return signedSBOM;
+      // Create signature file name (filename.json.sig)
+      const signatureFileName = filename.endsWith('.json') 
+        ? filename + '.sig' 
+        : filename + '.json.sig';
+      
+      console.log('Creating separate signature file:', signatureFileName);
+      
+      // Return both the original SBOM (unchanged) and signature file info
+      return {
+        sbom: sbomData, // Original SBOM unchanged
+        signatureFile: {
+          filename: signatureFileName,
+          content: signatureFileContent
+        }
+      };
     } catch (error) {
       throw new Error('Failed to sign SBOM: ' + error.message);
     }
@@ -237,58 +291,109 @@ class StandaloneSignatureService {
     return signedSBOM;
   }
 
-  // Verify SBOM signature
-  async verifySBOM(sbomData) {
+  // Verify SBOM signature from separate signature file
+  async verifySBOM(sbomData, signatureFileContent) {
     try {
-      // Load public key if not already loaded
-      if (!this.publicKey) {
-        const keys = this.loadKeys();
-        if (!keys) {
-          return { valid: false, error: 'No public key found. Please generate keys first.' };
-        }
-        this.publicKey = await this.importPublicKey(keys.publicKey);
+      // Always load keys from storage to ensure we have the latest keys
+      const keys = this.loadKeys();
+      if (!keys) {
+        return { valid: false, error: 'No public key found. Please generate keys first.' };
+      }
+      
+      // Debug: Log key data
+      console.log('Loaded keys from storage:', {
+        hasPrivateKey: !!keys.privateKey,
+        hasPublicKey: !!keys.publicKey,
+        privateKeyLength: keys.privateKey?.length || 0,
+        publicKeyLength: keys.publicKey?.length || 0,
+        publicKeyPreview: keys.publicKey?.substring(0, 50) + '...'
+      });
+      
+      // Import public key (always reload from storage)
+      let publicKey;
+      try {
+        publicKey = await this.importPublicKey(keys.publicKey);
+        console.log('Successfully imported public key');
+      } catch (error) {
+        console.error('Failed to import public key:', error);
+        return { valid: false, error: 'Failed to import public key: ' + error.message };
       }
 
-      // Extract signature from SBOM
-      const signature = this.extractSignatureFromSBOM(sbomData);
-      if (!signature) {
-        return { valid: false, error: 'No signature found in SBOM metadata. Please sign the SBOM first.' };
+      // Check if signature file has required properties
+      if (!signatureFileContent || !signatureFileContent.value || !signatureFileContent.algorithm) {
+        return { valid: false, error: 'Invalid signature file format. Missing signature value or algorithm.' };
       }
 
-      // Check if signature has required properties
-      if (!signature.value || !signature.algorithm) {
-        return { valid: false, error: 'Invalid signature format. Missing signature value or algorithm.' };
-      }
+      // Debug: Log signature data
+      console.log('Signature file content:', {
+        algorithm: signatureFileContent.algorithm,
+        timestamp: signatureFileContent.timestamp,
+        valueLength: signatureFileContent.value?.length || 0,
+        valuePreview: signatureFileContent.value?.substring(0, 50) + '...',
+        fullSignature: signatureFileContent.value
+      });
 
-      // Recreate canonical JSON (same as signing process)
-      const canonicalJson = JSON.stringify(sbomData, Object.keys(sbomData).sort());
+      // Clean SBOM data (same as signing process)
+      const cleanedSBOM = this.cleanSBOMData(sbomData);
+      console.log('Cleaned SBOM data for verification (removed Promise objects)');
+      
+      // Create canonical JSON from the cleaned SBOM (same as signing)
+      const canonicalJson = JSON.stringify(this.canonicalizeJSON(cleanedSBOM));
+      
+      // Debug: Log canonical JSON for debugging
+      console.log('Canonical JSON for verification:', canonicalJson);
+      console.log('Canonical JSON comparison - Are they identical?', 
+        canonicalJson === signatureFileContent.canonicalJson
+      );
       
       // Verify signature
       let signatureBuffer;
       try {
-        signatureBuffer = this.base64ToArrayBuffer(signature.value);
+        console.log('Original signature value length:', signatureFileContent.value.length);
+        console.log('Original signature value preview:', signatureFileContent.value.substring(0, 50) + '...');
+        
+        signatureBuffer = this.base64ToArrayBuffer(signatureFileContent.value);
+        console.log('Decoded signature buffer length:', signatureBuffer.byteLength);
       } catch (error) {
+        console.error('Base64 decode error:', error);
         return { valid: false, error: 'Invalid signature format. Cannot decode base64 signature.' };
       }
+      
+      console.log('About to verify signature with:');
+      console.log('- Public key:', publicKey);
+      console.log('- Signature buffer length:', signatureBuffer.byteLength);
+      console.log('- Canonical JSON length:', canonicalJson.length);
+      console.log('- Canonical JSON preview:', canonicalJson.substring(0, 100) + '...');
       
       const isValid = await crypto.subtle.verify(
         {
           name: 'RSA-PSS',
           saltLength: 32,
         },
-        this.publicKey,
+        publicKey,
         signatureBuffer,
         new TextEncoder().encode(canonicalJson)
       );
+      
+      console.log('Verification result:', isValid);
 
       return {
         valid: isValid,
-        timestamp: signature.timestamp,
-        algorithm: signature.algorithm
+        message: isValid ? 'Signature is valid' : 'Signature verification failed',
+        signature: signatureFileContent
       };
     } catch (error) {
       // Provide more specific error information
       const errorMessage = error.message || error.toString() || 'Unknown error occurred';
+      
+      // Check for specific error types
+      if (errorMessage.includes('verification') || errorMessage.includes('signature')) {
+        return { 
+          valid: false, 
+          error: 'Signature verification failed. This could be due to:\n• The SBOM was modified after signing\n• The signature was created with different keys\n• Please re-sign the SBOM with the current keys' 
+        };
+      }
+      
       return { valid: false, error: 'Verification failed: ' + errorMessage };
     }
   }
@@ -381,7 +486,9 @@ class StandaloneSignatureService {
 
   // Convert base64 to ArrayBuffer
   base64ToArrayBuffer(base64) {
-    const binaryString = atob(base64);
+    // Remove newlines that were added during encoding
+    const cleanBase64 = base64.replace(/\s/g, '');
+    const binaryString = atob(cleanBase64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
@@ -408,6 +515,113 @@ class StandaloneSignatureService {
   // Check if keys exist
   hasKeys() {
     return this.loadKeys() !== null;
+  }
+
+  // Upload and save private key
+  async uploadPrivateKey(keyFile) {
+    try {
+      const keyContent = await this.readFileAsText(keyFile);
+      
+      // Validate the key format
+      if (!this.isValidPrivateKey(keyContent)) {
+        throw new Error('Invalid private key format. Please upload a valid PEM-formatted private key.');
+      }
+      
+      // Save to sessionStorage
+      sessionStorage.setItem('sbom_private_key', keyContent);
+      
+      return { success: true, message: 'Private key uploaded successfully!' };
+    } catch (error) {
+      throw new Error('Failed to upload private key: ' + error.message);
+    }
+  }
+
+  // Upload and save public key
+  async uploadPublicKey(keyFile) {
+    try {
+      const keyContent = await this.readFileAsText(keyFile);
+      
+      // Validate the key format
+      if (!this.isValidPublicKey(keyContent)) {
+        throw new Error('Invalid public key format. Please upload a valid PEM-formatted public key.');
+      }
+      
+      // Save to sessionStorage
+      sessionStorage.setItem('sbom_public_key', keyContent);
+      
+      return { success: true, message: 'Public key uploaded successfully!' };
+    } catch (error) {
+      throw new Error('Failed to upload public key: ' + error.message);
+    }
+  }
+
+  // Upload both keys at once
+  async uploadKeyPair(privateKeyFile, publicKeyFile) {
+    try {
+      const privateKeyContent = await this.readFileAsText(privateKeyFile);
+      const publicKeyContent = await this.readFileAsText(publicKeyFile);
+      
+      // Validate both keys
+      if (!this.isValidPrivateKey(privateKeyContent)) {
+        throw new Error('Invalid private key format. Please upload a valid PEM-formatted private key.');
+      }
+      
+      if (!this.isValidPublicKey(publicKeyContent)) {
+        throw new Error('Invalid public key format. Please upload a valid PEM-formatted public key.');
+      }
+      
+      // Save both keys to sessionStorage
+      sessionStorage.setItem('sbom_private_key', privateKeyContent);
+      sessionStorage.setItem('sbom_public_key', publicKeyContent);
+      
+      return { success: true, message: 'Key pair uploaded successfully!' };
+    } catch (error) {
+      throw new Error('Failed to upload key pair: ' + error.message);
+    }
+  }
+
+  // Helper method to read file as text
+  readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = (e) => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+  }
+
+  // Validate private key format
+  isValidPrivateKey(keyContent) {
+    return keyContent.includes('-----BEGIN PRIVATE KEY-----') && 
+           keyContent.includes('-----END PRIVATE KEY-----');
+  }
+
+  // Validate public key format
+  isValidPublicKey(keyContent) {
+    return keyContent.includes('-----BEGIN PUBLIC KEY-----') && 
+           keyContent.includes('-----END PUBLIC KEY-----');
+  }
+
+  // Check if SBOM signature was created with current keys
+  async isSignatureFromCurrentKeys(sbomData) {
+    try {
+      const keys = this.loadKeys();
+      if (!keys) {
+        return { isCurrent: false, error: 'No keys found' };
+      }
+
+      // Extract signature timestamp
+      const signature = this.extractSignatureFromSBOM(sbomData);
+      if (!signature) {
+        return { isCurrent: false, error: 'No signature found' };
+      }
+
+      // For now, we'll assume if keys exist, they're current
+      // In a more sophisticated implementation, we could store key fingerprints
+      return { isCurrent: true };
+    } catch (error) {
+      return { isCurrent: false, error: error.message };
+    }
   }
 
   // Clear all stored keys
@@ -468,6 +682,74 @@ class StandaloneSignatureService {
     } catch (error) {
       throw error;
     }
+  }
+
+  // Remove signature from SBOM for signing
+  removeSignatureFromSBOM(sbomData) {
+    const sbomCopy = JSON.parse(JSON.stringify(sbomData));
+    
+    if (sbomCopy.metadata?.properties) {
+      sbomCopy.metadata.properties = sbomCopy.metadata.properties.filter(prop => 
+        !prop.name.startsWith('signature:')
+      );
+    }
+    
+    return sbomCopy;
+  }
+
+  // Clean SBOM data by removing Promise objects and other invalid values
+  cleanSBOMData(sbomData) {
+    const sbomCopy = JSON.parse(JSON.stringify(sbomData));
+    
+    // Recursively clean the SBOM data
+    const cleanObject = (obj) => {
+      if (obj === null || obj === undefined) {
+        return obj;
+      }
+      
+      if (Array.isArray(obj)) {
+        return obj.map(item => cleanObject(item));
+      }
+      
+      if (typeof obj === 'object') {
+        const cleaned = {};
+        for (const [key, value] of Object.entries(obj)) {
+          if (typeof value === 'string' && value.includes('[object Promise]')) {
+            // Replace Promise objects with "NA"
+            cleaned[key] = 'NA';
+          } else {
+            cleaned[key] = cleanObject(value);
+          }
+        }
+        return cleaned;
+      }
+      
+      return obj;
+    };
+    
+    return cleanObject(sbomCopy);
+  }
+
+  // Create canonical JSON (deterministic ordering for all nested objects)
+  canonicalizeJSON(obj) {
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.canonicalizeJSON(item));
+    }
+    
+    if (typeof obj === 'object') {
+      const sortedKeys = Object.keys(obj).sort();
+      const canonicalObj = {};
+      for (const key of sortedKeys) {
+        canonicalObj[key] = this.canonicalizeJSON(obj[key]);
+      }
+      return canonicalObj;
+    }
+    
+    return obj;
   }
 }
 
