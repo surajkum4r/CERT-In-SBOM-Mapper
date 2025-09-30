@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { ComponentEditor } from "./ComponentEditor";
 import SignatureManager from "./SignatureManager";
+import DuplicateDetector from "./DuplicateDetector";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { Pencil } from "lucide-react";
 import "../styles/components/AppView.css";
 import PropertyMapperService from "../services/propertyMapperService";
 import StandaloneSignatureService from "../services/standaloneSignatureService";
+import PDFExportService from "../services/pdfExportService";
+import DuplicateDetectionService from "../services/duplicateDetectionService";
 import ProgressBar from "./ProgressBar";
 import Notification from "./Notification";
 import errorService from "../services/errorService";
@@ -56,6 +59,8 @@ export default function App() {
   const [isNewUpload, setIsNewUpload] = useState(false);
   const [isCacheDropdownOpen, setIsCacheDropdownOpen] = useState(false);
   const [showSignatureManager, setShowSignatureManager] = useState(false);
+  const [showDuplicateDetector, setShowDuplicateDetector] = useState(false);
+  const [duplicateCount, setDuplicateCount] = useState(0);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportWithSignature, setExportWithSignature] = useState(false);
   const [exportKeyOption, setExportKeyOption] = useState('generate'); // 'generate' or 'upload'
@@ -663,6 +668,58 @@ export default function App() {
     }
   };
 
+
+  const exportPDF = () => {
+    if (!sbom || !components.length) {
+      showNotification("No SBOM data to export. Please upload an SBOM file first.", 'error');
+      return;
+    }
+
+    try {
+      const pdfService = new PDFExportService();
+      const result = pdfService.exportDetailedPDF(sbom, components, 'sbom-comprehensive-report.pdf');
+      
+      if (result.success) {
+        showNotification("Comprehensive PDF report exported successfully!", 'success');
+      } else {
+        showNotification(result.message, 'error');
+      }
+    } catch (error) {
+      console.error('PDF export error:', error);
+      showNotification("Failed to export PDF file. Please try again.", 'error');
+    }
+  };
+
+  // Check for duplicates and update count
+  const checkForDuplicates = async () => {
+    if (!components || components.length === 0) {
+      setDuplicateCount(0);
+      return;
+    }
+
+    try {
+      const duplicateService = new DuplicateDetectionService();
+      const duplicates = duplicateService.detectDuplicates(components, {
+        methods: ['exact', 'nameVersion', 'purl', 'hash']
+      });
+      
+      setDuplicateCount(duplicates.length);
+      
+      if (duplicates.length > 0) {
+        showNotification(`Found ${duplicates.length} duplicate groups in your SBOM. Click "Find Duplicates" to manage them.`, 'warning');
+      }
+    } catch (error) {
+      console.error('Duplicate check error:', error);
+    }
+  };
+
+  // Check for duplicates when components change
+  useEffect(() => {
+    if (components && components.length > 0) {
+      checkForDuplicates();
+    }
+  }, [components]);
+
   const mapVulnerabilities = () => {
     const map = new Map();
     vulnerabilities.forEach((vuln) => {
@@ -808,9 +865,31 @@ export default function App() {
               className="sidebar-btn"
               title="Verify digital signatures"
             >
-              ✅ Verify Signature
+              Verify Signature
             </button>
           </div>
+          
+          {sbom && components.length > 0 && (
+            <div className="sidebar-section duplicate-detection">
+              <h3>Data Quality</h3>
+              <button
+                onClick={() => setShowDuplicateDetector(!showDuplicateDetector)}
+                className={`sidebar-btn ${duplicateCount > 0 ? 'has-duplicates' : ''}`}
+                title="Detect and manage duplicate components"
+              >
+                Find Duplicates
+                {duplicateCount > 0 && (
+                  <span className="duplicate-badge">{duplicateCount}</span>
+                )}
+              </button>
+              {duplicateCount > 0 && (
+                <p className="duplicate-notice">
+                  {duplicateCount} duplicate group{duplicateCount !== 1 ? 's' : ''} found
+                </p>
+              )}
+            </div>
+          )}
+
           
           {/* Bottom section with cache management and reference link */}
           <div className="sidebar-bottom">
@@ -943,7 +1022,24 @@ export default function App() {
             </div>
           )}
 
-          {sbom && !editComponent && !showSignatureManager && (
+          {/* Duplicate Detection */}
+          {!editComponent && showDuplicateDetector && (
+            <div className="duplicate-detector-wrapper">
+              <DuplicateDetector 
+                components={components}
+                onBackToTable={() => setShowDuplicateDetector(false)}
+                onComponentsUpdate={(updatedComponents) => {
+                  setComponents(updatedComponents);
+                  setTableKey(prev => prev + 1); // Force table re-render
+                  showNotification("Components updated successfully!", 'success');
+                }}
+                onDuplicateCountChange={(count) => setDuplicateCount(count)}
+              />
+            </div>
+          )}
+
+
+          {sbom && !editComponent && !showSignatureManager && !showDuplicateDetector && (
             <div className="export-actions">
               <button
                 onClick={exportSbom}
@@ -968,6 +1064,14 @@ export default function App() {
                 disabled={fetchProgress !== null}
               >
                 Export XLSX Report
+              </button>
+              <button
+                onClick={exportPDF}
+                className="export-button orange"
+                title="Export Comprehensive PDF with All Component Details and CERT-In Compliance"
+                disabled={fetchProgress !== null}
+              >
+                Export PDF Report
               </button>
             </div>
           )}

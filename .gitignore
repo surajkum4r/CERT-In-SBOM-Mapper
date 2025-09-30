@@ -147,3 +147,13 @@ dist/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Documentation files (algorithm details)
+DUPLICATE_DETECTION_ALGORITHMS.md
+
+# Markdown files (except README.md)
+*.md
+!README.md
+
+# Test files
+test-duplicates.json
