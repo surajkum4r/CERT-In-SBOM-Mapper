@@ -265,6 +265,23 @@
   line-height: 1.4;
 }
 
+/* Modification indicator */
+.modification-indicator {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  text-align: center;
+}
+
+.modification-text {
+  color: #856404;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+
 
 .sidebar-link {
   display: block;

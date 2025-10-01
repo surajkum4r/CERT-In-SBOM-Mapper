@@ -475,6 +475,103 @@
   text-align: center;
 }
 
+/* Upload Warning Dialog Styles */
+.confirmation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1002;
+}
+
+.confirmation-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  text-align: center;
+}
+
+.confirmation-dialog h4 {
+  color: #dc3545;
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.confirmation-dialog p {
+  margin: 0 0 12px 0;
+  color: #333;
+  line-height: 1.5;
+}
+
+.confirmation-dialog p:last-of-type {
+  margin-bottom: 24px;
+}
+
+.confirmation-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.confirmation-buttons .btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 140px;
+  text-align: center;
+}
+
+.confirmation-buttons .btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.confirmation-buttons .btn-danger:hover {
+  background: #c82333;
+  transform: translateY(-1px);
+}
+
+.confirmation-buttons .btn-primary {
+  background: #007bff;
+  color: white;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirmation-buttons .btn-primary:hover {
+  background: #0056b3;
+  transform: translateY(-1px);
+}
+
+.confirmation-buttons .btn-secondary {
+  background: #6c757d;
+  color: white;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirmation-buttons .btn-secondary:hover {
+  background: #5a6268;
+  transform: translateY(-1px);
+}
+
 .export-options {
   margin: 16px 0;
 }

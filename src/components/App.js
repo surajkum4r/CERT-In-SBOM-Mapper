@@ -9,41 +9,15 @@ import "../styles/components/AppView.css";
 import PropertyMapperService from "../services/propertyMapperService";
 import StandaloneSignatureService from "../services/standaloneSignatureService";
 import PDFExportService from "../services/pdfExportService";
-import DuplicateDetectionService from "../services/duplicateDetectionService";
 import ProgressBar from "./ProgressBar";
 import Notification from "./Notification";
 import errorService from "../services/errorService";
 import cacheService from "../services/cacheService";
+import DuplicateDetectionService from "../services/duplicateDetectionService";
 
-const CERT_IN_PROPERTIES = [
-  { key: "Patch Status", label: "Patch Status" },
-  { key: "Release Date", label: "Release Date" },
-  { key: "End-of-Life Date", label: "End-of-Life (EOL) Date" },
-  { key: "Criticality", label: "Criticality" },
-  { key: "Usage Restrictions", label: "Usage Restrictions" },
-  { key: "Comments or Notes", label: "Comments or Notes" },
-  { key: "Executable Property", label: "Executable Property" },
-  { key: "Archive Property", label: "Archive Property" },
-  { key: "Structured Property", label: "Structured Property" },
-  { key: "Unique Identifier", label: "Unique Identifier" },
-  { key: "Component Supplier", label: "Component Supplier" },
-  { key: "Component Origin", label: "Component Origin" },
-];
-
-function updateProperty(properties, name, value) {
-  let props = properties ? [...properties] : [];
-  const idx = props.findIndex((p) => p.name === name);
-  if (idx >= 0) {
-    if (value.trim() === "") {
-      props.splice(idx, 1);
-    } else {
-      props[idx] = { name, value };
-    }
-  } else if (value.trim() !== "") {
-    props.push({ name, value });
-  }
-  return props;
-}
+import { CERT_IN_PROPERTIES } from "../constants/appConstants";
+import { updateProperty } from "../utils/appUtils";
+import ExportDialog from "./dialogs/ExportDialog";
 
 export default function App() {
   const [sbom, setSbom] = useState(null);
@@ -61,6 +35,7 @@ export default function App() {
   const [showSignatureManager, setShowSignatureManager] = useState(false);
   const [showDuplicateDetector, setShowDuplicateDetector] = useState(false);
   const [duplicateCount, setDuplicateCount] = useState(0);
+  const [duplicateNotificationShown, setDuplicateNotificationShown] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportWithSignature, setExportWithSignature] = useState(false);
   const [exportKeyOption, setExportKeyOption] = useState('generate'); // 'generate' or 'upload'
@@ -71,12 +46,64 @@ export default function App() {
   const [dialogResetKey, setDialogResetKey] = useState(0);
   const [nameFilter, setNameFilter] = useState('');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [hasModifications, setHasModifications] = useState(false);
+  const [originalComponents, setOriginalComponents] = useState([]);
+  const [showUploadWarning, setShowUploadWarning] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [showRefreshWarning, setShowRefreshWarning] = useState(false);
 
   // Filter components by name
   const filteredComponents = components.filter(component => {
     if (!nameFilter.trim()) return true;
     return component.name?.toLowerCase().includes(nameFilter.toLowerCase());
   });
+
+  // Track modifications by comparing current components with original
+  useEffect(() => {
+    if (originalComponents.length > 0 && components.length > 0) {
+      const hasChanges = components.some((comp, index) => {
+        const original = originalComponents[index];
+        if (!original) return false;
+        return JSON.stringify(comp) !== JSON.stringify(original);
+      });
+      setHasModifications(hasChanges);
+    } else if (originalComponents.length === 0 && components.length > 0) {
+      // If no original components set but we have components, no modifications yet
+      setHasModifications(false);
+    }
+  }, [components, originalComponents]);
+
+  // Page refresh warning - only show custom dialog, no browser warning
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      
+      // Check for F5, Ctrl+R, or Ctrl+Shift+R (refresh shortcuts)
+      if (hasModifications && (
+        event.key === 'F5' || 
+        (event.ctrlKey && event.key === 'r') ||
+        (event.ctrlKey && event.shiftKey && event.key === 'R') ||
+        (event.ctrlKey && event.key === 'R')
+      )) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        setShowRefreshWarning(true);
+        return false;
+      }
+    };
+
+    if (hasModifications) {
+      // Add keyboard event listener to catch refresh shortcuts
+      document.addEventListener('keydown', handleKeyDown, true);
+      window.addEventListener('keydown', handleKeyDown, true);
+      // Don't add beforeunload - this prevents browser warning
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [hasModifications]);
 
   // Handle redirect from signature page
   useEffect(() => {
@@ -105,15 +132,25 @@ export default function App() {
           setEditComponent(null);
           setVulnerabilities(json.vulnerabilities || []);
           
-          // Hide signature manager and show main table
+          // Hide signature manager and duplicate detector, show main table
           setShowSignatureManager(false);
+          setShowDuplicateDetector(false);
+          setDuplicateCount(0);
           
-          // Trigger fresh table appearance
+          // Force re-render to update button appearance and table
           setTableKey(prev => prev + 1);
           setIsNewUpload(true);
           
+          // Trigger duplicate detection for the new SBOM with updated components
+          setTimeout(() => {
+            if (updatedComponents && updatedComponents.length > 0) {
+              checkForDuplicates(updatedComponents);
+            }
+          }, 200);
+          
           // Reset new upload state after animation
           setTimeout(() => setIsNewUpload(false), 600);
+          
           
           // Clear the redirect flag
           sessionStorage.removeItem('sbom_upload_redirect');
@@ -156,10 +193,71 @@ export default function App() {
     setIsCacheDropdownOpen(!isCacheDropdownOpen);
   };
 
+  // Upload warning dialog handlers
+  const confirmUpload = () => {
+    setShowUploadWarning(false);
+    processFileUpload(pendingFile);
+    setPendingFile(null);
+    setHasModifications(false); // Reset after new upload
+  };
+
+  const cancelUpload = () => {
+    setShowUploadWarning(false);
+    setPendingFile(null);
+    // Reset file input
+    const fileInput = document.getElementById('sbomUpload');
+    if (fileInput) fileInput.value = '';
+  };
+
+  // Refresh warning dialog handlers
+  const confirmRefresh = () => {
+    setShowRefreshWarning(false);
+    setHasModifications(false); // Reset modification flag
+    // Allow the page to refresh/close
+    window.location.reload();
+  };
+
+  const cancelRefresh = () => {
+    setShowRefreshWarning(false);
+    // Stay on the page
+  };
+
+  const handleUploadButtonClick = (e) => {
+    
+    // Check for modifications before opening file dialog
+    if (hasModifications) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Create a temporary file input to capture the file when user confirms
+      const tempInput = document.createElement('input');
+      tempInput.type = 'file';
+      tempInput.accept = '.json';
+      tempInput.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          setPendingFile(file);
+          setShowUploadWarning(true);
+        }
+      };
+      tempInput.click();
+      return;
+    }
+    
+    // No modifications, allow normal file dialog to open
+  };
+
   const onFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    
+    // If we reach here, it means no modifications were detected in handleUploadButtonClick
+    // So we can proceed directly with upload
+    processFileUpload(file);
+  };
+
+  const processFileUpload = (file) => {
     // Validate file type
     if (!file.name.toLowerCase().endsWith('.json')) {
       const errorInfo = errorService.getUserFriendlyMessage(
@@ -167,8 +265,6 @@ export default function App() {
         'Please upload a JSON file'
       );
       showNotification(errorInfo.message, 'error');
-      // Clear input on error too
-      e.target.value = '';
       return;
     }
 
@@ -182,8 +278,6 @@ export default function App() {
         `File too large: ${fileSizeInMB}MB exceeds the 10MB limit. Please compress or split your SBOM file.`, 
         'error'
       );
-      // Clear input on error
-      e.target.value = '';
       return;
     }
 
@@ -216,15 +310,29 @@ export default function App() {
           setNameFilter('');
           setShowFilterDropdown(false);
           
-          // Hide signature manager and show main table when new file is uploaded
+          
+          // Force re-render to update button appearance
+          setTableKey(prev => prev + 1);
+          
+          // Hide signature manager and duplicate detector, show main table when new file is uploaded
           setShowSignatureManager(false);
+          setShowDuplicateDetector(false);
+          setDuplicateCount(0);
           
           // Trigger fresh table appearance
           setTableKey(prev => prev + 1);
           setIsNewUpload(true);
           
+          // Trigger duplicate detection for the new SBOM with updated components
+          setTimeout(() => {
+            if (updatedComponents && updatedComponents.length > 0) {
+              checkForDuplicates(updatedComponents);
+            }
+          }, 200);
+          
           // Reset new upload state after animation
           setTimeout(() => setIsNewUpload(false), 600);
+          
           
           // Clear the file input to allow re-uploading the same file
           const fileInput = document.getElementById('sbomUpload');
@@ -241,14 +349,13 @@ export default function App() {
             try {
               // ULTRA-FAST PATH: Check if entire SBOM processing result is cached
               if (cacheService.hasFileResult(json)) {
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('[FILE_CHECKSUM] Cache HIT for entire SBOM');
-                }
                 setFetchProgress(50);
                 setFetchLabel('Loading cached results...');
                 
                 const cachedResult = cacheService.getFileResult(json);
                 setComponents(cachedResult);
+                setOriginalComponents([...cachedResult]); // Save original components
+                setHasModifications(false); // Reset modification flag
                 setSbom((prev) => ({ ...(prev || {}), components: cachedResult }));
                 
                 setFetchProgress(100);
@@ -263,13 +370,14 @@ export default function App() {
                 setTimeout(() => {
                   setFetchProgress(null);
                   setFetchLabel("");
+                  // Trigger duplicate detection after cached results are loaded
+                  if (updatedComponents && updatedComponents.length > 0) {
+                    checkForDuplicates(updatedComponents);
+                  }
                 }, 600);
                 return;
               }
               
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[FILE_CHECKSUM] Cache MISS for SBOM, processing components...');
-              }
               setFetchProgress(10);
               
               // Process all components in parallel since cache makes it fast
@@ -305,13 +413,12 @@ export default function App() {
                 return { ...c, properties: newProps };
               });
               setComponents(merged);
+              setOriginalComponents([...merged]); // Save original components
+              setHasModifications(false); // Reset modification flag
               setSbom((prev) => ({ ...(prev || {}), components: merged }));
               
               // Cache the entire processing result for future use
               cacheService.setFileResult(json, merged);
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[FILE_CHECKSUM] Cached entire SBOM processing result');
-              }
             } catch (err) {
               errorService.logError(err, 'Background auto-fetch');
               const errorInfo = errorService.getUserFriendlyMessage(err, 'Error fetching component data');
@@ -330,6 +437,10 @@ export default function App() {
               setTimeout(() => {
                 setFetchProgress(null);
                 setFetchLabel("");
+                // Trigger duplicate detection after background processing is complete
+                if (updatedComponents && updatedComponents.length > 0) {
+                  checkForDuplicates(updatedComponents);
+                }
               }, 600);
             }
           })();
@@ -340,14 +451,16 @@ export default function App() {
           );
           showNotification(errorInfo.message, 'error');
           // Clear input on error
-          e.target.value = '';
+          const fileInput = document.getElementById('sbomUpload');
+          if (fileInput) fileInput.value = '';
         }
       } catch (ex) {
         errorService.logError(ex, 'File parsing', { fileName: file.name });
         const errorInfo = errorService.handleSBOMError(ex, file.name);
         showNotification(errorInfo.message, 'error');
         // Clear input on error
-        e.target.value = '';
+        const fileInput = document.getElementById('sbomUpload');
+        if (fileInput) fileInput.value = '';
       }
     };
     reader.readAsText(file);
@@ -410,6 +523,7 @@ export default function App() {
     setComponents(newComps);
     setSbom((prev) => ({ ...prev, components: newComps }));
     showNotification("Component updated successfully!", 'success');
+    // Modification tracking will be handled by useEffect
   };
 
   const exportSbom = () => {
@@ -767,20 +881,24 @@ export default function App() {
   };
 
   // Check for duplicates and update count
-  const checkForDuplicates = async () => {
-    if (!components || components.length === 0) {
+  const checkForDuplicates = async (componentsToCheck = null) => {
+    const componentsToUse = componentsToCheck || components;
+    
+    if (!componentsToUse || componentsToUse.length === 0) {
       setDuplicateCount(0);
       return;
     }
 
     try {
       const duplicateService = new DuplicateDetectionService();
-      const duplicates = duplicateService.detectDuplicates(components);
+      const duplicates = duplicateService.detectDuplicates(componentsToUse);
       
       setDuplicateCount(duplicates.length);
       
-      if (duplicates.length > 0) {
+      // Only show notification once when duplicates are first detected
+      if (duplicates.length > 0 && !duplicateNotificationShown) {
         showNotification(`Found ${duplicates.length} duplicate groups in your SBOM. Click "Find Duplicates" to manage them.`, 'warning');
+        setDuplicateNotificationShown(true);
       }
     } catch (error) {
       console.error('Duplicate check error:', error);
@@ -793,6 +911,37 @@ export default function App() {
       checkForDuplicates();
     }
   }, [components]);
+
+  // Handle page refresh warnings (custom modal only)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Intercept F5, Ctrl+R, Ctrl+F5 refresh shortcuts - show custom modal
+      if (e.key === 'F5' || (e.ctrlKey && e.key === 'r') || (e.ctrlKey && e.shiftKey && e.key === 'R')) {
+        if (hasModifications) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowRefreshWarning(true);
+        }
+      }
+    };
+
+    // Add event listener for keyboard shortcuts only
+    window.addEventListener('keydown', handleKeyDown, true); // Use capture phase
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [hasModifications]);
+
+  // Update page title to show unsaved changes
+  useEffect(() => {
+    if (hasModifications) {
+      document.title = '⚠️ CERT-In SBOM Mapper (Unsaved Changes)';
+    } else {
+      document.title = 'CERT-In SBOM Mapper';
+    }
+  }, [hasModifications]);
 
   const mapVulnerabilities = () => {
     const map = new Map();
@@ -814,105 +963,12 @@ export default function App() {
     setSelectedIndex(null);
   };
 
-  const openSignaturePage = () => {
-    // Instead of opening a separate HTML file, show the signature manager in the current app
-    setShowSignatureManager(true);
-  };
 
-  const showContextMenu = (event, type) => {
-    // Create context menu
-    const contextMenu = document.createElement('div');
-    contextMenu.style.cssText = `
-      position: fixed;
-      top: ${event.clientY}px;
-      left: ${event.clientX}px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      z-index: 1000;
-      padding: 8px 0;
-      min-width: 200px;
-    `;
-
-    const menuItems = [
-      {
-        text: 'Open in Current Tab',
-        action: () => {
-          if (type === 'signature-new') {
-            openSignaturePage();
-          } else {
-            setShowSignatureManager(true);
-          }
-        }
-      },
-      {
-        text: 'Open in New Window',
-        action: () => {
-          if (type === 'signature-new') {
-            // For signature, we'll open in current tab since it's now integrated
-            openSignaturePage();
-          } else {
-            const newWindow = window.open('', '_blank', 'width=1200,height=800');
-            newWindow.document.write(`
-              <html>
-                <head><title>Signature Management</title></head>
-                <body>
-                  <h2>Signature Management</h2>
-                  <p>This would be the signature management interface.</p>
-                  <button onclick="window.close()">Close</button>
-                </body>
-              </html>
-            `);
-          }
-        }
-      }
-    ];
-
-    menuItems.forEach(item => {
-      const menuItem = document.createElement('div');
-      menuItem.style.cssText = `
-        padding: 8px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        color: #333;
-      `;
-      menuItem.textContent = item.text;
-      menuItem.addEventListener('mouseenter', () => {
-        menuItem.style.backgroundColor = '#f0f0f0';
-      });
-      menuItem.addEventListener('mouseleave', () => {
-        menuItem.style.backgroundColor = 'transparent';
-      });
-      menuItem.addEventListener('click', () => {
-        item.action();
-        document.body.removeChild(contextMenu);
-      });
-      contextMenu.appendChild(menuItem);
-    });
-
-    document.body.appendChild(contextMenu);
-
-    // Remove context menu when clicking elsewhere
-    const removeMenu = (e) => {
-      if (!contextMenu.contains(e.target)) {
-        if (document.body.contains(contextMenu)) {
-          document.body.removeChild(contextMenu);
-        }
-        document.removeEventListener('click', removeMenu);
-      }
-    };
-
-    setTimeout(() => {
-      document.addEventListener('click', removeMenu);
-    }, 100);
-  };
 
   return (
     <div className="app-container">
       <header className="app-header">
         <h1>CERT-In SBOM Mapper</h1>
-        {/* <p className="app-subtitle">Made with &#10084;</p> */}
         <p className="app-subtitle">Make SBOM Cert-In Compliant</p>
       </header>
 
@@ -920,7 +976,11 @@ export default function App() {
         {/* Sidebar */}
         <aside className="sidebar">
           <h2>Upload SBOM</h2>
-          <label htmlFor="sbomUpload" className="upload-btn">
+          <label 
+            htmlFor="sbomUpload" 
+            className="upload-btn"
+            onClick={handleUploadButtonClick}
+          >
             Choose CycloneDX File
           </label>
           <input
@@ -973,6 +1033,7 @@ export default function App() {
               )}
             </div>
           )}
+          
 
           
           {/* Bottom section with cache management and reference link */}
@@ -1159,17 +1220,22 @@ export default function App() {
             <div className="duplicate-detector-wrapper">
               <DuplicateDetector 
                 components={components}
-                onBackToTable={() => setShowDuplicateDetector(false)}
+                onBackToTable={() => {
+                  setShowDuplicateDetector(false);
+                  setTableKey(prev => prev + 1); // Force a refresh of the main table when going back
+                }}
                 onComponentsUpdate={(updatedComponents) => {
                   setComponents(updatedComponents);
-                  setTableKey(prev => prev + 1); // Force table re-render
+                  setSbom((prev) => ({ ...prev, components: updatedComponents }));
+                  setTableKey(prev => prev + 1);
+                  // Don't update originalComponents - merging is a modification
+                  setHasModifications(true); // Mark as modified since we merged duplicates
                   showNotification("Components updated successfully!", 'success');
                 }}
                 onDuplicateCountChange={(count) => setDuplicateCount(count)}
               />
             </div>
           )}
-
 
           {sbom && !editComponent && !showSignatureManager && !showDuplicateDetector && (
             <div className="export-actions">
@@ -1212,155 +1278,62 @@ export default function App() {
       </div>
       
       {/* Export Dialog */}
-      {showExportDialog && (
+      <ExportDialog
+        showExportDialog={showExportDialog}
+        exportWithSignature={exportWithSignature}
+        setExportWithSignature={setExportWithSignature}
+        exportKeyOption={exportKeyOption}
+        setExportKeyOption={setExportKeyOption}
+        isExporting={isExporting}
+        isUploadingKeys={isUploadingKeys}
+        exportPrivateKeyFile={exportPrivateKeyFile}
+        setExportPrivateKeyFile={setExportPrivateKeyFile}
+        exportPublicKeyFile={exportPublicKeyFile}
+        setExportPublicKeyFile={setExportPublicKeyFile}
+        dialogResetKey={dialogResetKey}
+        clearAllFileStates={clearAllFileStates}
+        handleExportWithSignature={handleExportWithSignature}
+        handleExportWithoutSignature={handleExportWithoutSignature}
+        cancelExport={cancelExport}
+        handleExportPrivateKeyUpload={handleExportPrivateKeyUpload}
+        handleExportPublicKeyUpload={handleExportPublicKeyUpload}
+        uploadKeysForExport={uploadKeysForExport}
+      />
+
+      {/* Upload Warning Dialog */}
+      {showUploadWarning && (
         <div className="confirmation-overlay">
-          <div className="confirmation-dialog export-dialog" key={dialogResetKey}>
-            <h4>📤 Export SBOM</h4>
-            <p>Choose how you want to export your SBOM:</p>
-            
-            <div className="export-options">
-              <div className="export-option">
-                <label>
-                  <input
-                    type="radio"
-                    name="exportType"
-                    value="without"
-                    checked={!exportWithSignature}
-                    onChange={() => {
-                      setExportWithSignature(false);
-                      setExportKeyOption('generate');
-                      clearAllFileStates();
-                    }}
-                  />
-                  <span className="option-label">
-                    <strong>Export without signature</strong>
-                    <small>Standard JSON export</small>
-                  </span>
-                </label>
-              </div>
-              
-              <div className="export-option">
-                <label>
-                  <input
-                    type="radio"
-                    name="exportType"
-                    value="with"
-                    checked={exportWithSignature}
-                    onChange={() => {
-                      setExportWithSignature(true);
-                      setExportKeyOption('generate');
-                      clearAllFileStates();
-                    }}
-                  />
-                  <span className="option-label">
-                    <strong>Export with digital signature</strong>
-                    <small>Creates both SBOM and signature files</small>
-                  </span>
-                </label>
-              </div>
-            </div>
-            
-            {exportWithSignature && (
-              <div className="signature-options">
-                <p><strong>Key Options:</strong></p>
-                <div className="key-option">
-                  <label>
-                    <input
-                      type="radio"
-                      name="keyOption"
-                      value="generate"
-                      checked={exportKeyOption === 'generate'}
-                      onChange={() => {
-                        setExportKeyOption('generate');
-                        clearAllFileStates();
-                      }}
-                    />
-                    <span>Generate new key pair</span>
-                  </label>
-                </div>
-                <div className="key-option">
-                  <label>
-                    <input
-                      type="radio"
-                      name="keyOption"
-                      value="upload"
-                      checked={exportKeyOption === 'upload'}
-                      onChange={() => {
-                        setExportKeyOption('upload');
-                        clearAllFileStates();
-                      }}
-                    />
-                    <span>Upload your own keys</span>
-                  </label>
-                </div>
-                
-                {exportKeyOption === 'upload' && (
-                  <div className="inline-key-upload">
-                    <div className="file-input-group">
-                      <label htmlFor="exportPrivateKeyInput">Private Key (.pem, .key):</label>
-                      <input
-                        id="exportPrivateKeyInput"
-                        type="file"
-                        accept=".pem,.key,.txt"
-                        onChange={handleExportPrivateKeyUpload}
-                        className="file-input"
-                      />
-                      {exportPrivateKeyFile && (
-                        <span className="file-selected">✅ {exportPrivateKeyFile.name}</span>
-                      )}
-                    </div>
-                    
-                    <div className="file-input-group">
-                      <label htmlFor="exportPublicKeyInput">Public Key (.pem, .pub):</label>
-                      <input
-                        id="exportPublicKeyInput"
-                        type="file"
-                        accept=".pem,.pub,.txt"
-                        onChange={handleExportPublicKeyUpload}
-                        className="file-input"
-                      />
-                      {exportPublicKeyFile && (
-                        <span className="file-selected">✅ {exportPublicKeyFile.name}</span>
-                      )}
-                    </div>
-                    
-                    <div className="upload-keys-section">
-                      <button 
-                        onClick={uploadKeysForExport}
-                        className="btn btn-secondary btn-sm"
-                        disabled={isUploadingKeys || !exportPrivateKeyFile || !exportPublicKeyFile}
-                      >
-                        {isUploadingKeys ? 'Uploading...' : 'Upload Keys'}
-                      </button>
-                    </div>
-                    
-                    <div className="key-format-info">
-                      <p><strong>Key Format Requirements:</strong></p>
-                      <ul>
-                        <li>PEM format (-----BEGIN PRIVATE KEY----- / -----BEGIN PUBLIC KEY-----)</li>
-                        <li>RSA keys (2048-bit or higher recommended)</li>
-                        <li>Private key should be in PKCS#8 format</li>
-                      </ul>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+          <div className="confirmation-dialog">
+            <h4>⚠️ Unsaved Changes</h4>
+            <p>You have unsaved modifications to your current SBOM. Uploading a new file will replace your current work.</p>
+            <p><strong>Are you sure you want to continue?</strong></p>
             
             <div className="confirmation-buttons">
-              <button 
-                onClick={exportWithSignature ? handleExportWithSignature : handleExportWithoutSignature}
-                className="btn btn-primary"
-                disabled={isExporting || isUploadingKeys}
-              >
-                {isExporting ? 'Exporting...' : isUploadingKeys ? 'Uploading Keys...' : 'Export SBOM'}
+              <button onClick={confirmUpload} className="btn btn-danger">
+                Yes, Replace Current Work
               </button>
-              <button 
-                onClick={cancelExport}
-                className="btn btn-secondary"
-                disabled={isExporting}
-              >
-                Cancel
+              <button onClick={cancelUpload} className="btn btn-secondary">
+                Cancel Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Refresh Warning Dialog */}
+      {showRefreshWarning && (
+        <div className="confirmation-overlay">
+          <div className="confirmation-dialog">
+            <h4>⚠️ Unsaved Changes</h4>
+            <p>You have unsaved modifications to your current SBOM. Refreshing the page will replace your current work.</p>
+            <p><strong>Are you sure you want to continue?</strong></p>
+            
+            <div className="confirmation-buttons">
+              <button onClick={confirmRefresh} className="btn btn-danger">
+                Yes, Replace Current Work
+              </button>
+              <button onClick={cancelRefresh} className="btn btn-secondary">
+                Cancel Refresh
               </button>
             </div>
           </div>

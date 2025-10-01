@@ -273,13 +273,7 @@ class PropertyMapperService {
     try {
       // Ultra-fast path: Check if we already have the complete result cached
       if (cacheService.hasComponentResult(component, sbomVulnerabilities)) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[CHECKSUM] Cache HIT for component:', component.name);
-        }
         return cacheService.getComponentResult(component, sbomVulnerabilities);
-      }
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[CHECKSUM] Cache MISS for component:', component.name);
       }
 
       const pkgInfo = this.pkg.extractPackageInfo(component);
@@ -309,16 +303,6 @@ class PropertyMapperService {
 
       const [pkgData, vulnData, ghData, eolDate] = results;
 
-      if (process.env.REACT_APP_DEBUG_FETCH === "1" && process.env.NODE_ENV === 'development') {
-        // eslint-disable-next-line no-console
-        console.log("[MAP:init]", {
-          name: component.name,
-          version: component.version,
-          ecosystem: pkgInfo?.ecosystem,
-          maven: pkgInfo?.group ? `${pkgInfo.group}:${pkgInfo.name}` : undefined,
-          repoUrl,
-        });
-      }
 
       const props = {};
       props["Patch Status"] = this.computePatchStatus(vulnData, pkgInfo, pkgData);
@@ -353,20 +337,6 @@ class PropertyMapperService {
         : `${props["Comments or Notes"]}; ${recommendationText}`;
     }
 
-    if (process.env.REACT_APP_DEBUG_FETCH === "1" && process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
-      console.log("[MAP]", {
-        name: component.name,
-        version: component.version,
-        ecosystem: pkgInfo?.ecosystem,
-        maven: pkgInfo?.group ? `${pkgInfo.group}:${pkgInfo.name}` : undefined,
-        osvVulns: vulnData?.totalVulns ?? 0,
-        osvFixed: Array.isArray(vulnData?.fixedVersions) ? vulnData.fixedVersions : [],
-        latest: pkgData?.latestVersion || null,
-        patchStatus: props["Patch Status"],
-        criticality: props["Criticality"],
-      });
-    }
 
       // Cache the complete result for future use
       cacheService.setComponentResult(component, sbomVulnerabilities, props);

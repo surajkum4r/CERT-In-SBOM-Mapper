@@ -96,7 +96,6 @@ class CacheService {
     this.cache.clear();
     this.sessionStartTime = Date.now();
     this.clearStorage();
-    console.log('Cache forcefully cleared');
   }
 
   // Get cache info for debugging

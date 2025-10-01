@@ -147,20 +147,11 @@ class StandaloneSignatureService {
         throw new Error('No private key found');
       }
       
-      // Debug: Log key data
-      console.log('Loaded keys for signing:', {
-        hasPrivateKey: !!keys.privateKey,
-        hasPublicKey: !!keys.publicKey,
-        privateKeyLength: keys.privateKey?.length || 0,
-        publicKeyLength: keys.publicKey?.length || 0,
-        privateKeyPreview: keys.privateKey?.substring(0, 50) + '...'
-      });
       
       // Import private key (always reload from storage)
       let privateKey;
       try {
         privateKey = await this.importPrivateKey(keys.privateKey);
-        console.log('Successfully imported private key');
       } catch (error) {
         console.error('Failed to import private key:', error);
         throw new Error('Failed to import private key: ' + error.message);
@@ -168,18 +159,11 @@ class StandaloneSignatureService {
 
       // Clean SBOM data (no need to remove signature since we're not embedding)
       const cleanedSBOM = this.cleanSBOMData(sbomData);
-      console.log('Cleaned SBOM data (removed Promise objects)');
       
       // Create canonical JSON from the cleaned SBOM
       const canonicalJson = JSON.stringify(this.canonicalizeJSON(cleanedSBOM));
       
       // Debug: Log canonical JSON for debugging
-      console.log('Canonical JSON for signing:', canonicalJson);
-      
-      console.log('About to sign with:');
-      console.log('- Private key:', privateKey);
-      console.log('- Canonical JSON length:', canonicalJson.length);
-      console.log('- Canonical JSON preview:', canonicalJson.substring(0, 100) + '...');
       
       // Create signature using Web Crypto API
       const signature = await crypto.subtle.sign(
@@ -191,18 +175,10 @@ class StandaloneSignatureService {
         new TextEncoder().encode(canonicalJson)
       );
       
-      console.log('Signature created, length:', signature.byteLength);
 
       // Convert signature to base64
       const signatureBase64 = this.arrayBufferToBase64(signature);
       
-      // Debug: Log signature data
-      console.log('Created signature:', {
-        algorithm: this.signatureAlgorithm,
-        valueLength: signatureBase64.length,
-        valuePreview: signatureBase64.substring(0, 50) + '...',
-        fullSignature: signatureBase64
-      });
       
       // Create separate signature file content (like CycloneDX CLI)
       const signatureFileContent = {
@@ -217,7 +193,6 @@ class StandaloneSignatureService {
         ? filename + '.sig' 
         : filename + '.json.sig';
       
-      console.log('Creating separate signature file:', signatureFileName);
       
       // Return both the original SBOM (unchanged) and signature file info
       return {
@@ -300,20 +275,11 @@ class StandaloneSignatureService {
         return { valid: false, error: 'No public key found. Please generate keys first.' };
       }
       
-      // Debug: Log key data
-      console.log('Loaded keys from storage:', {
-        hasPrivateKey: !!keys.privateKey,
-        hasPublicKey: !!keys.publicKey,
-        privateKeyLength: keys.privateKey?.length || 0,
-        publicKeyLength: keys.publicKey?.length || 0,
-        publicKeyPreview: keys.publicKey?.substring(0, 50) + '...'
-      });
       
       // Import public key (always reload from storage)
       let publicKey;
       try {
         publicKey = await this.importPublicKey(keys.publicKey);
-        console.log('Successfully imported public key');
       } catch (error) {
         console.error('Failed to import public key:', error);
         return { valid: false, error: 'Failed to import public key: ' + error.message };
@@ -324,46 +290,24 @@ class StandaloneSignatureService {
         return { valid: false, error: 'Invalid signature file format. Missing signature value or algorithm.' };
       }
 
-      // Debug: Log signature data
-      console.log('Signature file content:', {
-        algorithm: signatureFileContent.algorithm,
-        timestamp: signatureFileContent.timestamp,
-        valueLength: signatureFileContent.value?.length || 0,
-        valuePreview: signatureFileContent.value?.substring(0, 50) + '...',
-        fullSignature: signatureFileContent.value
-      });
 
       // Clean SBOM data (same as signing process)
       const cleanedSBOM = this.cleanSBOMData(sbomData);
-      console.log('Cleaned SBOM data for verification (removed Promise objects)');
       
       // Create canonical JSON from the cleaned SBOM (same as signing)
       const canonicalJson = JSON.stringify(this.canonicalizeJSON(cleanedSBOM));
       
-      // Debug: Log canonical JSON for debugging
-      console.log('Canonical JSON for verification:', canonicalJson);
-      console.log('Canonical JSON comparison - Are they identical?', 
-        canonicalJson === signatureFileContent.canonicalJson
-      );
       
       // Verify signature
       let signatureBuffer;
       try {
-        console.log('Original signature value length:', signatureFileContent.value.length);
-        console.log('Original signature value preview:', signatureFileContent.value.substring(0, 50) + '...');
         
         signatureBuffer = this.base64ToArrayBuffer(signatureFileContent.value);
-        console.log('Decoded signature buffer length:', signatureBuffer.byteLength);
       } catch (error) {
         console.error('Base64 decode error:', error);
         return { valid: false, error: 'Invalid signature format. Cannot decode base64 signature.' };
       }
       
-      console.log('About to verify signature with:');
-      console.log('- Public key:', publicKey);
-      console.log('- Signature buffer length:', signatureBuffer.byteLength);
-      console.log('- Canonical JSON length:', canonicalJson.length);
-      console.log('- Canonical JSON preview:', canonicalJson.substring(0, 100) + '...');
       
       const isValid = await crypto.subtle.verify(
         {
@@ -375,7 +319,6 @@ class StandaloneSignatureService {
         new TextEncoder().encode(canonicalJson)
       );
       
-      console.log('Verification result:', isValid);
 
       return {
         valid: isValid,

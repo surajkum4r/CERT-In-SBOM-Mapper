@@ -132,9 +132,23 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
       setSelectedDuplicates(new Set());
       setSelectedComponents(new Map());
       
+      // Update local state and re-detect duplicates immediately
+      setDuplicates([]); // Clear current duplicates
+      setStats(null); // Clear stats
+      
       // Re-detect duplicates with updated components
       setTimeout(() => {
-        detectDuplicates();
+        // Use the updated components for detection
+        const updatedDuplicates = duplicateService.detectDuplicates(updatedComponents);
+        const duplicateStats = duplicateService.getDuplicateStats(updatedDuplicates);
+        
+        setDuplicates(updatedDuplicates);
+        setStats(duplicateStats);
+        
+        // Notify parent about duplicate count change
+        if (onDuplicateCountChange) {
+          onDuplicateCountChange(updatedDuplicates.length);
+        }
       }, 100);
       
     } catch (error) {
@@ -171,9 +185,23 @@ const DuplicateDetector = ({ components, onBackToTable, onComponentsUpdate, onDu
       setSelectedDuplicates(new Set());
       setSelectedComponents(new Map());
       
+      // Update local state and re-detect duplicates immediately
+      setDuplicates([]); // Clear current duplicates
+      setStats(null); // Clear stats
+      
       // Re-detect duplicates with updated components
       setTimeout(() => {
-        detectDuplicates();
+        // Use the updated components for detection
+        const updatedDuplicates = duplicateService.detectDuplicates(updatedComponents);
+        const duplicateStats = duplicateService.getDuplicateStats(updatedDuplicates);
+        
+        setDuplicates(updatedDuplicates);
+        setStats(duplicateStats);
+        
+        // Notify parent about duplicate count change
+        if (onDuplicateCountChange) {
+          onDuplicateCountChange(updatedDuplicates.length);
+        }
       }, 100);
       
     } catch (error) {
