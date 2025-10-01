@@ -137,3 +137,23 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Build outputs
+build/
+dist/
+
+# Environment files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Documentation files (algorithm details)
+DUPLICATE_DETECTION_ALGORITHMS.md
+
+# Markdown files (except README.md)
+*.md
+!README.md
+
+# Test files
+test-duplicates.json

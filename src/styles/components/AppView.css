@@ -41,12 +41,203 @@
 .sidebar {
   width: 260px;
   background-color: #e1ecf9;
-  padding: 24px;
+  padding: 16px 20px;
   box-shadow: 2px 0 6px -2px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow-y: auto;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+.sidebar-section {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.sidebar-section.digital-signatures {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #b8c5d1;
+}
+
+
+.sidebar-section.duplicate-detection {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #b8c5d1;
+}
+
+
+.sidebar-btn.has-duplicates {
+  background: #ffc107;
+  color: #212529;
+  border: 2px solid #ffc107;
+}
+
+.sidebar-btn.has-duplicates:hover {
+  background: #e0a800;
+  border-color: #e0a800;
+}
+
+.duplicate-badge {
+  background: #dc3545;
+  color: white;
+  border-radius: 50%;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  margin-left: 8px;
+  min-width: 18px;
+  text-align: center;
+  display: inline-block;
+}
+
+.duplicate-notice {
+  margin: 8px 0 0 0;
+  font-size: 0.8rem;
+  color: #dc3545;
+  font-weight: 500;
+  text-align: center;
+  background: #f8d7da;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #f5c6cb;
+}
+
+/* Table Filter Controls */
+.header-with-filter {
+  display: flex;
   align-items: center;
-  position: relative;
+  gap: 8px;
+}
+
+.filter-icon {
+  background: #007bff;
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+}
+
+.filter-icon:hover {
+  background-color: #0056b3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.4);
+}
+
+.filter-row {
+  background-color: #f8f9fa;
+}
+
+.filter-cell {
+  padding: 12px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.table-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.table-filter-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background-color: white;
+  transition: border-color 0.2s ease;
+}
+
+.table-filter-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.table-clear-filter-btn {
+  padding: 8px 10px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  transition: background-color 0.2s ease;
+}
+
+.table-clear-filter-btn:hover {
+  background-color: #c82333;
+}
+
+.table-close-filter-btn {
+  padding: 8px 12px;
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+
+.table-close-filter-btn:hover {
+  background-color: #5a6268;
+}
+
+.table-filter-results {
+  font-size: 12px;
+  color: #6c757d;
+  font-style: italic;
+  text-align: center;
+}
+
+.sidebar-section h3 {
+  color: #2c3e50;
+  font-weight: 600;
+  margin: 0 0 10px 0;
+  text-transform: none;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-btn {
+  width: 100%;
+  padding: 10px 18px;
+  margin-bottom: 8px;
+  background-color: rgb(52, 107, 165);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  text-align: center;
+  text-transform: none;
+  box-shadow: 0 3px 7px rgba(0, 123, 255, 0.4);
+  transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.sidebar-btn:hover {
+  background-color: #274973;
+  box-shadow: 0 4px 10px rgba(0, 123, 255, 0.5);
+}
+
+.sidebar-btn:active {
+  background-color: #14253a;
+  box-shadow: 0 2px 5px rgba(0, 123, 255, 0.4);
 }
 
 .sidebar h2 {
@@ -63,15 +254,21 @@
 }
 
 .sidebar-note {
-  margin: 4px 0 0;
+  margin: 8px 0 0;
   font-size: 0.85rem;
   font-style: italic;
+  text-align: center;
+  width: 75%;
+  margin-left: auto;
+  margin-right: auto;
+  color: #666;
+  line-height: 1.4;
 }
 
+
 .sidebar-link {
-  position: absolute;
-  bottom: 20px;
-  left: 12px;
+  display: block;
+  margin-top: 0;
   font-size: 20px;
   color: #004080;
   text-decoration: underline;
@@ -101,6 +298,12 @@
   font-weight: 700;
 }
 
+.component-count {
+  font-weight: 400;
+  color: #666;
+  font-size: 0.9em;
+}
+
 .main-heading.heading-fresh {
   animation: headingPulse 1.0s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   color: #004080;
@@ -119,6 +322,16 @@
   border: 1px solid #ddd;
 }
 
+/* Signature wrapper - align with table */
+.signature-wrapper {
+  margin-bottom: 20px;
+}
+
+/* Duplicate detector wrapper */
+.duplicate-detector-wrapper {
+  margin-bottom: 20px;
+}
+
 .component-table {
   border-collapse: separate;
   border-spacing: 0;
@@ -130,7 +343,7 @@
 }
 
 .table-header {
-  padding: 8px 10px;
+  padding: 8px 6px;
   text-align: left;
   font-weight: 600;
   font-size: 1.2rem;
@@ -141,10 +354,66 @@
   color: white;
 }
 
+.table-header:first-child {
+  text-align: center;
+}
+
 .table-cell {
-  padding: 9px 10px;
+  padding: 9px 6px;
   vertical-align: top;
   font-size: 1rem;
+}
+
+.table-cell.truncate {
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #333;
+  position: relative;
+  cursor: pointer !important;
+  will-change: auto;
+  contain: layout style paint;
+}
+
+/* Pre-rendered instant tooltip */
+.table-cell.truncate::before {
+  content: attr(data-full-text);
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #333;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: normal;
+  max-width: 400px;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  pointer-events: none;
+  word-wrap: break-word;
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.8);
+  transition: none !important;
+  animation: none !important;
+}
+
+.table-cell.truncate:hover::before {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: scale(1) !important;
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Push Action column to the edge */
+.table-cell:nth-child(5) {
+  width: 80px;
+  max-width: 80px;
+  text-align: right;
+  padding-right: 6px;
 }
 
 .table-cell.center {
@@ -152,16 +421,98 @@
 }
 
 .table-cell.truncate {
-  max-width: 250px;
+  max-width: 200px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: #333;
+  position: relative;
+  cursor: pointer;
+  padding-left: 1px;
+}
+
+.table-cell.truncate:hover::after {
+  content: attr(data-full-text);
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #333;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: normal;
+  max-width: 300px;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  pointer-events: none;
 }
 
 .table-row {
-  cursor: pointer;
+  cursor: pointer !important;
   transition: background-color 0.15s ease-in-out;
+}
+
+/* Force pointer cursor everywhere in the table */
+.component-table, .component-table *, 
+.table-cell, .table-cell *, 
+.table-row, .table-row *, 
+.table-header, .table-header *,
+.table-cell.truncate, .table-cell.truncate *,
+.table-cell.truncate:hover, .table-cell.truncate:hover *,
+.table-cell.truncate::before, .table-cell.truncate::after {
+  cursor: pointer !important;
+}
+
+/* Override any inherited cursor styles */
+.table-cell.truncate:hover {
+  cursor: pointer !important;
+}
+
+.table-cell.truncate:hover * {
+  cursor: pointer !important;
+}
+
+/* Force pointer on all table elements */
+table, table *, tbody, tbody *, thead, thead *, tr, tr *, td, td *, th, th * {
+  cursor: pointer !important;
+}
+
+/* Force pointer cursor on ALL table elements with maximum specificity */
+.component-table, .component-table *, 
+.table-cell, .table-cell *, 
+.table-row, .table-row *, 
+.table-header, .table-header *,
+table, table *, tbody, tbody *, thead, thead *, tr, tr *, td, td *, th, th *,
+.component-table:hover, .component-table:hover *,
+.table-cell:hover, .table-cell:hover *,
+.table-row:hover, .table-row:hover *,
+.table-header:hover, .table-header:hover *,
+table:hover, table:hover *, tbody:hover, tbody:hover *, thead:hover, thead:hover *, 
+tr:hover, tr:hover *, td:hover, td:hover *, th:hover, th:hover * {
+  cursor: pointer !important;
+}
+
+/* Additional aggressive rules for table content */
+.component-table *:hover,
+.table-cell *:hover,
+.table-row *:hover,
+.table-header *:hover {
+  cursor: pointer !important;
+}
+
+/* Nuclear option - force pointer on everything inside table wrapper */
+.table-wrapper,
+.table-wrapper *,
+.table-wrapper:hover,
+.table-wrapper:hover *,
+.table-wrapper *:hover {
+  cursor: pointer !important;
+}
+
+/* Everything else should have normal cursor (arrow) */
+body, html, div, span, p, h1, h2, h3, h4, h5, h6, section, article, aside, nav, main, header, footer {
+  cursor: default;
 }
 
 .table-row.selected {
@@ -188,6 +539,7 @@
   gap: 12px;
 }
 
+
 .export-button.green {
   background-color: #28a745;
   box-shadow: 0 3px 7px rgba(40, 167, 69, 0.6);
@@ -203,13 +555,28 @@
   box-shadow: 0 3px 7px rgba(111, 66, 193, 0.6);
 }
 
+.export-button.orange {
+  background-color: #fd7e14;
+  box-shadow: 0 3px 7px rgba(253, 126, 20, 0.6);
+}
+
+.export-button.teal {
+  background-color: #20c997;
+  box-shadow: 0 3px 7px rgba(32, 201, 151, 0.6);
+}
+
+/* Sidebar bottom section */
+.sidebar-bottom {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #b8c5d1;
+}
+
 /* Cache Management - Compact Dropdown */
 .cache-management-compact {
-  position: absolute;
-  bottom: 60px;
-  left: 12px;
-  right: 12px;
-  width: auto;
+  margin-bottom: 16px;
+  width: 100%;
 }
 
 .cache-toggle-btn {
@@ -289,6 +656,31 @@
   color: #6c757d;
   font-style: italic;
   text-align: center;
+}
+
+/* Responsive sidebar layout */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    padding: 16px;
+    height: auto;
+  }
+  
+  .sidebar-bottom {
+    margin-top: 20px;
+  }
+  
+  .cache-management-compact {
+    margin-bottom: 12px;
+  }
+  
+  .sidebar-link {
+    text-align: center;
+  }
+  
+  .sidebar-section {
+    margin-bottom: 16px;
+  }
 }
 
 @keyframes slideDown {

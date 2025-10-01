@@ -35,8 +35,8 @@ class PropertyMapperService {
            (!ghKey || cacheService.has(ghKey));
   }
 
-  // Fast synchronous processing when all data is cached
-  buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities) {
+  // Fast processing when all data is cached (now async due to EOL date fetching)
+  async buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities) {
     // Get cached data directly
     const pkgData = pkgInfo?.ecosystem === "npm" 
       ? cacheService.get(cacheService.generateKey('npm', pkgInfo.name))
@@ -48,7 +48,7 @@ class PropertyMapperService {
     
     const vulnData = cacheService.get(cacheService.generateKey('vuln', pkgInfo.ecosystem, pkgInfo.name));
     const ghData = repoUrl ? cacheService.get(cacheService.generateKey('github', repoUrl.split('/').slice(-2).join('/'))) : null;
-    const eolDate = this.lifecycle.fetchEol(component, pkgInfo); // This is synchronous
+    const eolDate = await this.lifecycle.fetchEol(component, pkgInfo); // This is async
 
     // Build properties using cached data
     const props = {};
@@ -109,32 +109,156 @@ class PropertyMapperService {
   }
 
   generateUniqueIdentifier(component, pkgInfo, supplier) {
-    // If component already has a purl, use it as base and modify to include supplier
-    if (component.purl) {
-      // Parse existing purl and reconstruct with supplier
-      const purlParts = component.purl.split('/');
-      if (purlParts.length >= 2) {
-        const type = purlParts[0].replace('pkg:', '');
-        const name = purlParts[purlParts.length - 1];
-        return `pkg:supplier/${supplier}/${type}/${name}`;
-      }
+    // If component already has a purl, prepend "supplier" to it
+    if (component.purl && this.isValidPurl(component.purl)) {
+      // Take existing purl and prepend "supplier"
+      // pkg:maven/org.hdrhistogram/HdrHistogram@2.1.12?type=jar
+      // becomes: pkg:supplier/maven/org.hdrhistogram/HdrHistogram@2.1.12?type=jar
+      return component.purl.replace('pkg:', 'pkg:supplier/');
     }
     
-    // Generate new purl based on ecosystem and supplier
+    // Generate new purl following Package URL specification
     if (pkgInfo?.ecosystem && pkgInfo?.name) {
-      const ecosystem = pkgInfo.ecosystem.toLowerCase();
-      const name = pkgInfo.name;
-      const version = component.version ? `@${component.version}` : '';
-      
-      if (ecosystem === 'maven' && pkgInfo.group) {
-        return `pkg:supplier/${supplier}/${ecosystem}/${pkgInfo.group}/${name}${version}`;
-      } else {
-        return `pkg:supplier/${supplier}/${ecosystem}/${name}${version}`;
-      }
+      const organizationName = this.extractOrganizationName(component, pkgInfo, supplier);
+      const standardPurl = this.generateStandardPurl(component, pkgInfo, organizationName, supplier);
+      // Prepend "supplier" to the generated purl
+      return standardPurl.replace('pkg:', 'pkg:supplier/');
     }
     
     // Fallback to component name
     return component.name || "NA";
+  }
+
+  extractOrganizationName(component, pkgInfo, supplier) {
+    // Try to get organization from various sources in order of preference
+    if (pkgInfo?.group) return pkgInfo.group; // For Maven groupId
+    if (pkgInfo?.author) return pkgInfo.author;
+    if (component.publisher) return component.publisher;
+    if (component.author) return component.author;
+    if (component.organization) return component.organization;
+    
+    // For scoped packages (e.g., @angular/core), extract scope
+    if (pkgInfo?.name && pkgInfo.name.startsWith('@')) {
+      const scope = pkgInfo.name.split('/')[0].substring(1);
+      return scope;
+    }
+    
+    // Special handling for different ecosystems
+    const ecosystem = pkgInfo?.ecosystem?.toLowerCase();
+    if (ecosystem === 'pypi') {
+      // PyPI packages typically don't have organization names
+      return null;
+    }
+    if (ecosystem === 'gem') {
+      // Ruby gems typically don't have organization names
+      return null;
+    }
+    if (ecosystem === 'cargo') {
+      // Rust crates typically don't have organization names
+      return null;
+    }
+    
+    // Fallback to supplier or component name
+    return supplier || component.name || "unknown";
+  }
+
+  generateStandardPurl(component, pkgInfo, organizationName, supplier) {
+    const ecosystem = pkgInfo.ecosystem.toLowerCase();
+    const name = pkgInfo.name;
+    const version = component.version ? `@${component.version}` : '';
+    
+    // Generate standard purl first, then we'll prepend "supplier"
+    let basePurl;
+    if (ecosystem === 'maven' && pkgInfo.group) {
+      // Maven: pkg:maven/group/name@version
+      basePurl = `pkg:${ecosystem}/${pkgInfo.group}/${name}${version}`;
+    } else if (ecosystem === 'npm' && name.startsWith('@')) {
+      // NPM scoped: pkg:npm/@scope/name@version
+      basePurl = `pkg:${ecosystem}/${name}${version}`;
+    } else {
+      // Other ecosystems: pkg:ecosystem/name@version
+      basePurl = `pkg:${ecosystem}/${name}${version}`;
+    }
+    
+    // Add qualifiers and subpath if present
+    return this.addQualifiersAndSubpath(basePurl, component);
+  }
+
+  addQualifiersAndSubpath(basePurl, component) {
+    const qualifiers = [];
+    const subpath = component.subpath || '';
+    
+    // Add common qualifiers based on component properties
+    if (component.classifier) qualifiers.push(`classifier=${component.classifier}`);
+    if (component.extension) qualifiers.push(`extension=${component.extension}`);
+    if (component.type) qualifiers.push(`type=${component.type}`);
+    if (component.scope) qualifiers.push(`scope=${component.scope}`);
+    
+    // Add repository qualifier if available
+    if (component.repository) {
+      const repo = component.repository.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      qualifiers.push(`repository_url=${repo}`);
+    }
+    
+    // Build final PURL
+    let finalPurl = basePurl;
+    
+    if (qualifiers.length > 0) {
+      finalPurl += `?${qualifiers.join('&')}`;
+    }
+    
+    if (subpath) {
+      finalPurl += `#${subpath}`;
+    }
+    
+    return finalPurl;
+  }
+
+  isValidPurl(purl) {
+    if (!purl || !purl.startsWith('pkg:')) return false;
+    
+    try {
+      // Basic validation - check if it follows pkg:type/namespace/name@version format
+      const withoutPkg = purl.substring(4); // Remove 'pkg:'
+      const parts = withoutPkg.split('/');
+      
+      if (parts.length < 2) return false;
+      
+      const type = parts[0];
+      const namePart = parts[parts.length - 1];
+      
+      // Check if name part has version
+      const hasVersion = namePart.includes('@');
+      
+      return type && namePart && (hasVersion || !namePart.includes('@'));
+    } catch {
+      return false;
+    }
+  }
+
+  parseExistingPurl(purl) {
+    if (!this.isValidPurl(purl)) return null;
+    
+    try {
+      const withoutPkg = purl.substring(4);
+      const [typeAndNsName, versionPart] = withoutPkg.split('@');
+      const parts = typeAndNsName.split('/');
+      
+      const type = parts[0];
+      const version = versionPart ? versionPart.split('?')[0].split('#')[0] : null;
+      const name = parts[parts.length - 1];
+      const namespace = parts.length > 2 ? parts.slice(1, -1).join('/') : null;
+      
+      return {
+        type,
+        namespace,
+        name,
+        version,
+        original: purl
+      };
+    } catch {
+      return null;
+    }
   }
 
   buildComments(packageData, vulnData, githubData) {
@@ -149,17 +273,21 @@ class PropertyMapperService {
     try {
       // Ultra-fast path: Check if we already have the complete result cached
       if (cacheService.hasComponentResult(component, sbomVulnerabilities)) {
-        console.log('[CHECKSUM] Cache HIT for component:', component.name);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[CHECKSUM] Cache HIT for component:', component.name);
+        }
         return cacheService.getComponentResult(component, sbomVulnerabilities);
       }
-      console.log('[CHECKSUM] Cache MISS for component:', component.name);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[CHECKSUM] Cache MISS for component:', component.name);
+      }
 
       const pkgInfo = this.pkg.extractPackageInfo(component);
       const repoUrl = (component.externalReferences || []).find((r) => r.type === "vcs" || r.type === "repository")?.url || null;
 
-      // Fast path: if all data is cached, process synchronously
+      // Fast path: if all data is cached, process asynchronously
       if (this.isAllDataCached(component, pkgInfo, repoUrl)) {
-        const result = this.buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities);
+        const result = await this.buildPropertiesFromCachedData(component, pkgInfo, repoUrl, sbomVulnerabilities);
         // Cache the complete result for future use
         cacheService.setComponentResult(component, sbomVulnerabilities, result);
         return result;
@@ -181,7 +309,7 @@ class PropertyMapperService {
 
       const [pkgData, vulnData, ghData, eolDate] = results;
 
-      if (process.env.REACT_APP_DEBUG_FETCH === "1") {
+      if (process.env.REACT_APP_DEBUG_FETCH === "1" && process.env.NODE_ENV === 'development') {
         // eslint-disable-next-line no-console
         console.log("[MAP:init]", {
           name: component.name,
@@ -225,7 +353,7 @@ class PropertyMapperService {
         : `${props["Comments or Notes"]}; ${recommendationText}`;
     }
 
-    if (process.env.REACT_APP_DEBUG_FETCH === "1") {
+    if (process.env.REACT_APP_DEBUG_FETCH === "1" && process.env.NODE_ENV === 'development') {
       // eslint-disable-next-line no-console
       console.log("[MAP]", {
         name: component.name,

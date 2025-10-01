@@ -8,10 +8,10 @@ class CacheService {
     this.loadFromStorage();
   }
 
-  // Load cache from localStorage on initialization
+  // Load cache from sessionStorage on initialization
   loadFromStorage() {
     try {
-      const stored = localStorage.getItem(this.storageKey);
+      const stored = sessionStorage.getItem(this.storageKey);
       if (stored) {
         const data = JSON.parse(stored);
         const now = Date.now();
@@ -39,16 +39,16 @@ class CacheService {
         timestamp: Date.now(),
         sessionStartTime: this.sessionStartTime
       };
-      localStorage.setItem(this.storageKey, JSON.stringify(data));
+      sessionStorage.setItem(this.storageKey, JSON.stringify(data));
     } catch (error) {
       console.warn('Failed to save cache to storage:', error);
     }
   }
 
-  // Clear localStorage
+  // Clear sessionStorage
   clearStorage() {
     try {
-      localStorage.removeItem(this.storageKey);
+      sessionStorage.removeItem(this.storageKey);
     } catch (error) {
       console.warn('Failed to clear storage:', error);
     }
