@@ -1,0 +1,45 @@
+{
+  "product": {
+    "name": "EdgeGate 200 Industrial Gateway",
+    "version": "rev C",
+    "details": "4-port industrial IoT gateway, DIN-rail, -20..70 C",
+    "warranty_amc": "3-year warranty; AMC available (AMC-EG200)",
+    "manufacturer": {"name": "Example Devices Pvt Ltd", "location": {"city": "Pune", "region": "Maharashtra", "country": "IN"}},
+    "manufacturing_date": "2026-08-14",
+    "supplier": {"name": "Example Distribution LLP", "location": {"city": "Bengaluru", "country": "IN"}},
+    "model_number": "EG-200-C",
+    "serial_number": "EG200C-2608-000123",
+    "components": [
+      {
+        "name": "Main SoC",
+        "model_number": "XYZ-A53-Quad",
+        "serial_number": "unknown",
+        "technical_specification": "4x Cortex-A53 @ 1.6 GHz, 1.1 V core",
+        "supplier": {"name": "Chip Vendor Inc", "location": {"city": "Hsinchu", "country": "TW"}},
+        "technology_node": "28nm",
+        "compliance": ["RoHS 3", "REACH"],
+        "power_supply": "1.1 V / 3.3 V, 2.5 W typ",
+        "license": "LicenseRef-vendor-boot-rom",
+        "test_result": "Passed ICT + functional test, lot 2608-17"
+      },
+      {
+        "name": "Power module",
+        "model_number": "PSU-24V-15W",
+        "serial_number": "PM-88231",
+        "technical_specification": "24 V DC input, 5 V / 3 A output",
+        "supplier": {"name": "Power Parts Co", "location": {"city": "Shenzhen", "country": "CN"}},
+        "is_integrated_circuit": false,
+        "compliance": ["CE", "BIS IS 13252"],
+        "power_supply": "24 V DC, 15 W",
+        "license": "LicenseRef-none",
+        "test_result": "Burn-in 48h passed",
+        "components": [
+          {"name": "DC-DC converter IC", "model_number": "DCDC-5A", "serial_number": "unknown",
+           "technical_specification": "Buck, 4.5-28 V in", "supplier": {"name": "Analog IC Corp", "location": {"country": "US"}},
+           "technology_node": "180nm", "compliance": ["RoHS 3"], "power_supply": "4.5-28 V", "license": "LicenseRef-none",
+           "test_result": "Sampled AQL 0.65 passed"}
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "author": "Example Org Pvt Ltd - Product Security",
+  "organization": "Example Org",
+  "first_party_patterns": ["com.example", "@example/", "example-org"],
+  "default_criticality": null,
+  "criticality_heuristic": true,
+  "online": false,
+  "http_timeout": 15.0
+}

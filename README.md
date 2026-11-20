@@ -113,6 +113,34 @@ Notes:
 
 ---
 
+## Command-line companion: `certin-bom` (Python)
+
+[`certin-bom-cli/`](certin-bom-cli/) contains a separate, scriptable tool for CI pipelines and
+audits. It covers all five inventories in the CERT-In Guidelines v2.0 (SBOM, CBOM, QBOM, AIBOM
+and HBOM):
+
+- **Audit** any CycloneDX or SPDX BOM field by field against the CERT-In tables, with a CI gate
+  (`validate --fail-under`).
+- **Enrich** an SBOM to all 21 Table 5 fields. Every derived value records how it was obtained,
+  and unknowns are declared explicitly.
+- **Vulnerabilities** from OSV (including Debian, Ubuntu and Alpine packages), NVD by CPE, CISA KEV
+  and EPSS, prioritised P0–P3. An offline database is available for air-gapped audits.
+- **Cryptography inventory (CBOM)** from code, certificates and TLS endpoints, and a quantum-risk
+  QBOM with a post-quantum migration plan.
+- **Disclosure:** VEX and CSAF 2.0 output, public and private SBOM copies, and Ed25519 signatures.
+
+```bash
+cd certin-bom-cli
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e '.[crypto]'
+certin-bom validate your-sbom.json --md report.md
+```
+
+See [certin-bom-cli/README.md](certin-bom-cli/README.md) for full setup, NVD API key handling and
+usage.
+
+---
+
 ## Future Updates
 
 - Additional ecosystems and data sources (NuGet, Maven SCM parsing improvements)

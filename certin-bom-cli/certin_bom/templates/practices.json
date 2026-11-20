@@ -1,0 +1,8 @@
+{
+  "Frequency": "Regenerated on every CI build and every release; re-scanned for vulnerabilities daily",
+  "Depth": "All direct and transitive dependencies, including OS packages in the container image",
+  "Known Unknowns": "Fields that cannot be determined are recorded as 'unknown' and listed in cert-in:known_unknowns",
+  "Distribution and Delivery": "Public SBOM on the customer portal; private SBOM + VEX via signed API on request",
+  "Access Control": "RBAC: read-only for customers, edit for product security, private SBOM restricted under NDA",
+  "Accommodation of Mistakes": "Corrections issued as a new BOM version with incremented 'version' and same serialNumber"
+}

@@ -1,0 +1,37 @@
+{
+  "model": {
+    "name": "invoice-classifier",
+    "version": "2.1.0",
+    "description": "Classifies scanned invoices by vendor and category",
+    "type": "image-classification",
+    "developer": "Example Org Pvt Ltd",
+    "licenses": ["Apache-2.0"],
+    "algorithms": {
+      "approach": "supervised",
+      "architecture_family": "transformer",
+      "model_architecture": "ViT-B/16 fine-tuned"
+    },
+    "performance_metrics": [
+      {"type": "accuracy", "value": 0.947},
+      {"type": "f1", "value": 0.931, "slice": "held-out test set (10k invoices)"}
+    ],
+    "data_sources": ["proprietary scanned invoices (2021-2024)", "synthetic augmentation"],
+    "datasets": [
+      {"name": "invoices-train", "version": "2024.06", "format": "PNG + JSON labels", "license": "LicenseRef-proprietary",
+       "source": "internal document archive", "limitations": "English/Hindi only", "contains_personal_data": "yes - masked before training"}
+    ],
+    "hardware": "Training: 8x NVIDIA A100 80GB; inference: 1x T4 or CPU (4 vCPU, 8 GB RAM)",
+    "security_requirements": "Weights encrypted at rest (AES-256-GCM); model endpoint behind mTLS + RBAC; PII masked in logs",
+    "inputs": ["image/png", "image/jpeg"],
+    "outputs": ["application/json (label, confidence)"],
+    "intended_usage": ["Routing invoices to the correct accounts-payable queue"],
+    "out_of_scope_usage": ["Fraud determination", "Any decision about individuals without human review"],
+    "limitations": ["Accuracy drops on handwritten invoices"],
+    "environmental_impact": {"activity": "training", "energy_kwh": 1250, "co2e_kg": 890, "notes": "single fine-tuning run"},
+    "software_dependencies": [
+      {"name": "torch", "version": "2.5.1", "purl": "pkg:pypi/torch@2.5.1"},
+      {"name": "transformers", "version": "4.46.3", "purl": "pkg:pypi/transformers@4.46.3"}
+    ],
+    "vulnerabilities": "OSV scan of dependencies on 2026-11-01: no known vulnerabilities"
+  }
+}

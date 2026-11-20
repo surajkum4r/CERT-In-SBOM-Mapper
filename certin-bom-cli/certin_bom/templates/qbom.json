@@ -1,0 +1,17 @@
+{
+  "model_name": "QKD-Link 100",
+  "version": "fw 3.2.0",
+  "vendor": {"name": "Example Quantum Systems", "origin": "IN"},
+  "licenses": ["LicenseRef-vendor-eula"],
+  "communication_protocols": ["BB84 QKD over dark fibre", "ETSI GS QKD 014 key delivery API (HTTPS)"],
+  "hardware": [
+    {"name": "Single-photon detector module", "type": "sensor"},
+    {"name": "FPGA post-processing board", "type": "processor"}
+  ],
+  "software_dependencies": [
+    {"name": "qkd-controller", "version": "3.2.0"},
+    {"name": "openssl", "version": "3.5.0", "purl": "pkg:generic/openssl@3.5.0"}
+  ],
+  "environmental_impact": {"power_w": 180, "cooling": "air, no cryogenics"},
+  "vulnerabilities": "Vendor PSIRT advisory review 2026-11-01: none open"
+}

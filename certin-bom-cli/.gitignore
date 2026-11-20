@@ -1,0 +1,13 @@
+# secrets - never commit
+.env
+*.key
+keys/
+
+# offline vulnerability database (large, regenerate with `certin-bom vulndb update`)
+vulndb/
+
+# generated BOMs and reports
+out/
+*.egg-info/
+__pycache__/
+.venv/

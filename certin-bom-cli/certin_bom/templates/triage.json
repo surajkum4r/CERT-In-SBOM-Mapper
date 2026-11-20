@@ -1,0 +1,12 @@
+{
+  "CVE-2021-44228": {
+    "status": "fixed",
+    "detail": "Upgraded log4j-core to 2.17.1 in release 4.2.0",
+    "response": ["update"]
+  },
+  "GHSA-xxxx-xxxx-xxxx": {
+    "status": "not_affected",
+    "justification": "code_not_reachable",
+    "detail": "Vulnerable XML parser path is never invoked; input is JSON only"
+  }
+}

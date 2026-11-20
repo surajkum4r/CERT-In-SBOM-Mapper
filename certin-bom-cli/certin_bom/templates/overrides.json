@@ -1,0 +1,24 @@
+{
+  "defaults": {
+    "criticality": "medium"
+  },
+  "components": {
+    "pkg:maven/org.apache.logging.log4j/log4j-core": {
+      "criticality": "critical",
+      "comments": "Used by the payments service logging pipeline"
+    },
+    "django": {
+      "criticality": "critical",
+      "usage_restrictions": "none; export control: EAR99"
+    },
+    "openssl@3.0.1": {
+      "cpe": "cpe:2.3:a:openssl:openssl:3.0.1:*:*:*:*:*:*:*",
+      "comments": "Vendored in third_party/openssl; CPE lets NVD (--nvd) check it"
+    },
+    "internal-auth-lib": {
+      "origin": "proprietary (first-party)",
+      "supplier": "Example Org Pvt Ltd",
+      "eol_date": "2028-03-31"
+    }
+  }
+}
