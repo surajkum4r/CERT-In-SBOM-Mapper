@@ -142,6 +142,12 @@ Open **Vulnerability Status (VEX)** after processing. New findings start as *Und
 
 The statuses are also kept in the SBOM's own `vulnerabilities[].analysis`.
 
+### Process requirements (CERT-In 5.3, 5.4)
+
+Access control, secure distribution, SDLC automation, auditing, incident response and signing-key
+handling depend on how the tool is deployed. See [docs/CERT-In-process-guide.md](docs/CERT-In-process-guide.md)
+for what the app provides and what your organisation must do for each requirement.
+
 ### Considerations and limitations
 
 - Components without an ecosystem purl (vendored C/C++ code, `pkg:generic`, internal libraries) cannot be matched by OSV. They show Patch Status `NA` with a "Vulnerabilities not checked" note. To cover them, add a CPE and scan with an NVD-capable tool, or fill the fields manually.
