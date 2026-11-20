@@ -110,3 +110,23 @@ describe("known unknowns", () => {
     expect(bad.lookupStatus).toBe("failed: offline");
   });
 });
+
+describe("components not checked for vulnerabilities (B6)", () => {
+  const { uncheckedComponents } = require("../utils/conformance");
+  test("lists components with NA patch status or a failed lookup, with the reason", () => {
+    const sbom = {
+      components: [
+        { "bom-ref": "a", name: "lodash", version: "4.17.20", properties: [{ name: "Patch Status", value: "Up to date" }] },
+        { "bom-ref": "b", name: "nginx", version: "1.18.0", properties: [{ name: "Patch Status", value: "NA" },
+          { name: "cert-in:known_unknowns", value: "Patch Status: No package ecosystem/version that OSV can match" }] },
+        { "bom-ref": "c", name: "x", properties: [{ name: "cert-in:lookup_status", value: "failed: offline" }] },
+        { "bom-ref": "d", name: "log4j-core", properties: [{ name: "Patch Status", value: "NA" }] },
+      ],
+      vulnerabilities: [{ id: "CVE-1", affects: [{ ref: "d" }] }],
+    };
+    expect(uncheckedComponents(sbom)).toEqual([
+      { ref: "b", name: "nginx@1.18.0", reason: "No package ecosystem/version that OSV can match" },
+      { ref: "c", name: "x", reason: "lookup failed: offline" },
+    ]);
+  });
+});

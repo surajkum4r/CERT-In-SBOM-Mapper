@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import { GUIDELINE, PRACTICES, sbomAuthor, sbomTools, statusOf } from "./certInDocumentService";
-import { getProp, sbomConformance } from "../utils/conformance";
+import { getProp, sbomConformance, uncheckedComponents } from "../utils/conformance";
 
 // CERT-In properties are stored as CycloneDX component properties ({name, value}),
 // not as fields on the component object.
@@ -118,6 +118,12 @@ class PDFExportService {
   addVulnerabilities(sbom) {
     const vulns = sbom.vulnerabilities || [];
     this.heading("Vulnerabilities");
+    const unchecked = uncheckedComponents(sbom);
+    if (unchecked.length) {
+      this.text(`${unchecked.length} component(s) could not be checked for vulnerabilities (absence of findings is unknown):`,
+        { style: "bold" });
+      this.bullets(unchecked.slice(0, 30).map((u) => `${u.name}: ${u.reason}`));
+    }
     if (!vulns.length) {
       this.text("No vulnerabilities recorded in this SBOM.", { gap: 2 });
       return;

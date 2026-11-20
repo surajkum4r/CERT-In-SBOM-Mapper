@@ -3,6 +3,7 @@ import "../styles/components/VexPanel.css";
 import {
   REMEDIATION_DATE_PROPERTY, RESTART_PROPERTY, RESTART_REQUIRED, VEX_JUSTIFICATIONS, VEX_RESPONSES, VEX_STATUSES, statusOf,
 } from "../services/certInDocumentService";
+import { uncheckedComponents } from "../utils/conformance";
 
 const prop = (v, name) => (v.properties || []).find((p) => p.name === name)?.value;
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -10,6 +11,7 @@ const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
 // CERT-In section 6: record the exploitability status of every vulnerability, then publish
 // it as CycloneDX VEX and a CSAF 2.0 advisory.
 export default function VexPanel({ vulnerabilities, components, onChange, onExportVex, onExportCsaf, onBack }) {
+  const unchecked = useMemo(() => uncheckedComponents({ components, vulnerabilities }), [components, vulnerabilities]);
   const [filter, setFilter] = useState("all");
   const [publisher, setPublisher] = useState("");
   const [namespace, setNamespace] = useState("");
@@ -56,6 +58,21 @@ export default function VexPanel({ vulnerabilities, components, onChange, onExpo
         Record the exploitability status of each vulnerability. New findings start as <em>Under Investigation</em>.
         Choose <em>Not affected</em> with a justification when the vulnerable code cannot be reached in your product.
       </p>
+
+      {unchecked.length > 0 && (
+        <details className="vex-unchecked">
+          <summary>
+            {unchecked.length} component(s) could not be checked for vulnerabilities - "no vulnerabilities" is unknown for these
+          </summary>
+          <ul>
+            {unchecked.map((u) => <li key={u.ref || u.name}><strong>{u.name}</strong>: {u.reason}</li>)}
+          </ul>
+          <p>
+            Check them with an NVD/CPE-capable scanner, e.g. the certin-bom CLI with <code>--online --nvd</code>, and record
+            the results here or in the component editor.
+          </p>
+        </details>
+      )}
 
       <div className="vex-summary">
         <button className={filter === "all" ? "vex-chip active" : "vex-chip"} onClick={() => setFilter("all")}>

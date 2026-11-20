@@ -68,3 +68,11 @@ test("remediation details: response, workaround, restart, date", () => {
   // the status was not touched by these edits
   expect(screen.getByLabelText("Status of CVE-2021-44228")).toHaveValue("under_investigation");
 });
+
+test("warns about components that could not be checked", () => {
+  const comps = [...components, { "bom-ref": "nginx", name: "nginx", version: "1.18.0", properties: [{ name: "Patch Status", value: "NA" },
+    { name: "cert-in:known_unknowns", value: "Patch Status: No package ecosystem/version that OSV can match" }] }];
+  render(<VexPanel vulnerabilities={initial} components={comps} onChange={() => {}} onExportVex={() => {}} onExportCsaf={() => {}} onBack={() => {}} />);
+  expect(screen.getByText(/1 component\(s\) could not be checked for vulnerabilities/)).toBeInTheDocument();
+  expect(screen.getByText("nginx@1.18.0")).toBeInTheDocument();
+});

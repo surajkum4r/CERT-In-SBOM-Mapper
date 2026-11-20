@@ -185,3 +185,17 @@
 .conf-warn {
   color: #b26a00;
 }
+
+.vex-unchecked {
+  border: 1px solid #f0c36d;
+  background: #fff8e6;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+
+.vex-unchecked summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #8a5a00;
+}

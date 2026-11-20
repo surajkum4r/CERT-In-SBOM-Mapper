@@ -128,3 +128,21 @@ export function sbomConformance(sbom) {
     criticalityToReview: perComponent.filter((c) => c.criticalityNeedsReview).length,
   };
 }
+
+// Components that no vulnerability source could check (no ecosystem purl, lookup failed, ...):
+// "0 vulnerabilities" for these means "unknown", not "clean".
+export function uncheckedComponents(sbom) {
+  const affected = new Set((sbom?.vulnerabilities || []).flatMap((v) => (v.affects || []).map((a) => a.ref)));
+  return (sbom?.components || [])
+    .filter((c) => !affected.has(c["bom-ref"]))
+    .map((c) => {
+      const lookup = String(getProp(c, LOOKUP_STATUS_PROPERTY) || "");
+      const reasons = parseKnownUnknowns(c);
+      const patch = getProp(c, "Patch Status");
+      if (lookup.startsWith("failed")) return { c, reason: `lookup ${lookup}` };
+      if (patch === undefined || patch === "NA") return { c, reason: reasons["Patch Status"] || "not checked against a vulnerability database" };
+      return null;
+    })
+    .filter(Boolean)
+    .map(({ c, reason }) => ({ ref: c["bom-ref"], name: `${c.name || "unnamed"}${c.version ? "@" + c.version : ""}`, reason }));
+}
