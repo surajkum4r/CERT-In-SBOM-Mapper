@@ -19,7 +19,7 @@ import VexPanel from "./VexPanel";
 import ConformancePanel from "./ConformancePanel";
 import { sbomConformance } from "../utils/conformance";
 import {
-  AUTHOR_PROPERTY, PRACTICES, applyComponentFields, csafVex, cyclonedxVex, prepareForExport, sbomAuthor,
+  AUTHOR_PROPERTY, PRACTICES, applyComponentFields, applyLookupOutcome, csafVex, cyclonedxVex, prepareForExport, sbomAuthor,
   setVulnerabilityAnalysis,
 } from "../services/certInDocumentService";
 
@@ -338,7 +338,12 @@ export default function App() {
                 });
                 
                 // description / licence / hashes into native fields where missing, plus Author of SBOM Data
-                return applyComponentFields({ ...c, properties: newProps }, fetched._componentFields, sbomAuthor(json));
+                const withFields = applyComponentFields({ ...c, properties: newProps }, fetched._componentFields, sbomAuthor(json));
+                // known unknowns: why fields are NA, or that the lookup failed (then NA means "not collected")
+                const gotResult = Object.prototype.hasOwnProperty.call(fetched, "Patch Status");
+                return applyLookupOutcome(withFields, gotResult
+                  ? { knownUnknowns: fetched._knownUnknowns, lookupFailed: fetched._lookupFailed }
+                  : { lookupFailed: "no result returned" });
               });
               // Vulnerabilities found via OSV go into the SBOM's vulnerabilities[] (CERT-In field 8),
               // merged with those the uploaded SBOM already had.

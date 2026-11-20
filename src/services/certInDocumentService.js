@@ -89,6 +89,33 @@ export function applyComponentFields(component, fields, author) {
   return c;
 }
 
+// Known unknowns (Table 5 practice): record why fields are NA, or that the lookup itself failed.
+export const KNOWN_UNKNOWNS_PROPERTY = "cert-in:known_unknowns";
+export const LOOKUP_STATUS_PROPERTY = "cert-in:lookup_status";
+
+export function applyLookupOutcome(component, { knownUnknowns, lookupFailed } = {}) {
+  let props = (component.properties || []).filter((p) => p.name !== KNOWN_UNKNOWNS_PROPERTY && p.name !== LOOKUP_STATUS_PROPERTY);
+  if (lookupFailed) {
+    props = setProp(props, LOOKUP_STATUS_PROPERTY, `failed: ${lookupFailed}`);
+  } else {
+    props = setProp(props, LOOKUP_STATUS_PROPERTY, "completed");
+    const entries = Object.entries(knownUnknowns || {});
+    const clean = (s) => String(s).replace(/;\s*/g, ", "); // "; " separates entries
+    if (entries.length) props = setProp(props, KNOWN_UNKNOWNS_PROPERTY, entries.map(([f, r]) => `${f}: ${clean(r)}`).join("; "));
+  }
+  return { ...component, properties: props };
+}
+
+export function parseKnownUnknowns(component) {
+  const raw = getProp(component.properties, KNOWN_UNKNOWNS_PROPERTY) || "";
+  const out = {};
+  for (const part of raw.split("; ")) {
+    const i = part.indexOf(": ");
+    if (i > 0) out[part.slice(0, i)] = part.slice(i + 2);
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ export (fields 16-17, practices, 5.3.2)
 export function prepareForExport(sbom, { author, practices = {}, distribution = "private", now = nowIso() } = {}) {
   const out = clone(sbom);

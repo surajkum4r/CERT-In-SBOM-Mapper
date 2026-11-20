@@ -129,3 +129,8 @@
 .conf-bad {
   color: #c62828;
 }
+
+.conf-reason {
+  text-decoration: underline dotted;
+  cursor: help;
+}

@@ -56,9 +56,24 @@ export default function ConformancePanel({ sbom, onOpenComponent, onBack }) {
             <tbody>
               {rows.map((c) => (
                 <tr key={c.ref || c.name} className="vex-row">
-                  <td>{c.name}</td>
+                  <td>
+                    {c.name}
+                    {String(c.lookupStatus || "").startsWith("failed") && (
+                      <div className="conf-bad" title={c.lookupStatus}>Automatic lookup failed - NA fields not collected</div>
+                    )}
+                  </td>
                   <td>{c.missing.join(", ") || "-"}</td>
-                  <td>{c.na.join(", ") || "-"}</td>
+                  <td>
+                    {c.na.length ? c.na.map((label, i) => {
+                      const reason = c.reasons[label] || c.reasons[label.replace(" (EOL)", "")]
+                        || (label === "Vulnerabilities" ? c.reasons["Patch Status"] : undefined);
+                      return (
+                        <span key={label} title={reason || "declared NA"} className={reason ? "conf-reason" : undefined}>
+                          {i ? ", " : ""}{label}
+                        </span>
+                      );
+                    }) : "-"}
+                  </td>
                   <td>
                     <button className="btn btn-secondary btn-sm" onClick={() => onOpenComponent(c.ref)}>Edit</button>
                   </td>

@@ -60,8 +60,36 @@ class PropertyMapperService {
         "Component Supplier": "NA",
         "Component Origin": "NA",
         _vulnerabilities: [],
+        // NA here means "not collected", not a known unknown (see conformance.js)
+        _lookupFailed: String(error?.message || error || "unknown error").slice(0, 200),
       };
     }
+  }
+
+  // Why each field that is still NA could not be determined: recorded as CERT-In "known unknowns"
+  // (Table 5, Practices and Processes) so a reader can tell "looked, nothing exists" from "not checked".
+  explainUnknowns(props, component, pkgInfo, pkgData, vulnData, license) {
+    const noEcosystem = !pkgInfo || ["unknown", "generic"].includes(pkgInfo.ecosystem);
+    const distro = ["deb", "rpm", "apk", "alpm"].includes(pkgInfo?.ecosystem);
+    const reasons = {
+      "Patch Status": vulnData?.reason || "vulnerability status could not be determined",
+      "Criticality": vulnData?.scanned === false ? `no vulnerability data (${vulnData.reason})` : "no severity information",
+      "Release Date": noEcosystem ? "component has no package-registry identity"
+        : distro ? "OS package: release date not published by a browser-accessible source"
+        : "release date not published by the package registry",
+      "End-of-Life Date": distro ? "OS package: supported by the distribution, upstream EOL does not apply"
+        : "no end-of-life data published for this product (endoflife.date)",
+      "Usage Restrictions": "no licence information in the SBOM or package registry",
+      "Component Supplier": "no supplier in the SBOM, package registry or package namespace",
+      "Component Origin": license ? "licence does not indicate origin" : "no licence information to determine origin",
+      "Executable Property": "cannot be determined from the component type",
+      "Archive Property": noEcosystem ? "no package type to determine packaging" : "cannot be determined from the package type",
+      "Structured Property": "no package manifest (component has no package ecosystem)",
+      "Unique Identifier": "component has no name to build an identifier from",
+    };
+    const out = {};
+    for (const [field, reason] of Object.entries(reasons)) if (props[field] === "NA") out[field] = reason;
+    return out;
   }
 
   buildProperties(component, pkgInfo, pkgData, vulnData, ghData, eolDate, sbomVulnerabilities) {
@@ -90,6 +118,7 @@ class PropertyMapperService {
         hashSource: pkgData?.hashSource || null,
       },
     };
+    props._knownUnknowns = this.explainUnknowns(props, component, pkgInfo, pkgData, vulnData, license);
     return props;
   }
 

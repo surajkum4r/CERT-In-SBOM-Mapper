@@ -74,3 +74,39 @@ describe("PDF report", () => {
     expect(svc.exportDetailedPDF(SBOM, SBOM.components)).toEqual({ success: true, message: "Comprehensive PDF exported successfully!" });
   });
 });
+
+describe("known unknowns", () => {
+  const { applyLookupOutcome, parseKnownUnknowns } = require("./certInDocumentService");
+  const PropertyMapperService = require("./propertyMapperService").default;
+
+  test("the mapper explains every field it leaves NA", () => {
+    const mapper = new PropertyMapperService();
+    const c = { name: "busybox", version: "1.36.1-r2", purl: "pkg:apk/alpine/busybox@1.36.1-r2?distro=alpine-3.18.4", type: "library" };
+    const props = mapper.buildProperties(c, mapper.pkg.extractPackageInfo(c), null,
+      { scanned: true, hasVulnerabilities: false, totalVulns: 0, vulns: [], fixedVersions: [] }, null, null, []);
+    expect(props["End-of-Life Date"]).toBe("NA");
+    expect(props._knownUnknowns["End-of-Life Date"]).toMatch(/supported by the distribution/);
+    expect(props._knownUnknowns["Usage Restrictions"]).toMatch(/no licence information/);
+    expect(props._knownUnknowns["Patch Status"]).toBeUndefined(); // it has a value ("Up to date")
+  });
+
+  test("reasons are stored on the component and read back; separators are safe", () => {
+    const c = applyLookupOutcome({ name: "x", properties: [] },
+      { knownUnknowns: { "Release Date": "not published; really", "Component Supplier": "none found" } });
+    expect(c.properties.find((p) => p.name === "cert-in:lookup_status").value).toBe("completed");
+    expect(parseKnownUnknowns(c)).toEqual({ "Release Date": "not published, really", "Component Supplier": "none found" });
+    const failed = applyLookupOutcome(c, { lookupFailed: "OSV HTTP 500" });
+    expect(failed.properties.find((p) => p.name === "cert-in:lookup_status").value).toBe("failed: OSV HTTP 500");
+    expect(failed.properties.find((p) => p.name === "cert-in:known_unknowns")).toBeUndefined();
+  });
+
+  test("after a failed lookup, NA counts as missing (not collected), not as a known unknown", () => {
+    const comp = (status) => ({ "bom-ref": "a", name: "a", version: "1", purl: "pkg:npm/a@1",
+      properties: [{ name: "Release Date", value: "NA" }, { name: "cert-in:lookup_status", value: status }] });
+    const ok = sbomConformance({ components: [comp("completed")] }).perComponent[0];
+    const bad = sbomConformance({ components: [comp("failed: offline")] }).perComponent[0];
+    expect(ok.na).toContain("Release Date");
+    expect(bad.missing).toContain("Release Date");
+    expect(bad.lookupStatus).toBe("failed: offline");
+  });
+});

@@ -9,6 +9,7 @@
 // completeness = share of fields with real values
 
 import { isValidPurl } from "./purl";
+import { LOOKUP_STATUS_PROPERTY, parseKnownUnknowns } from "../services/certInDocumentService";
 
 const NA_VALUES = new Set(["na", "n/a", "unknown", "noassertion", "not available"]);
 
@@ -81,8 +82,13 @@ export function componentConformance(component, sbom, context = {}) {
     structured: getProp(component, "Structured Property"),
     uid: isValidPurl(component.purl) ? component.purl : uid === undefined ? undefined : isValidPurl(uid) ? uid : classify(uid) === "na" ? "NA" : undefined,
   };
+  // If the automatic lookup failed, an NA was never actually collected: count it as missing.
+  const lookupFailed = String(getProp(component, LOOKUP_STATUS_PROPERTY) || "").startsWith("failed");
   const fields = {};
-  for (const f of TABLE5_FIELDS) fields[f.key] = classify(values[f.key]);
+  for (const f of TABLE5_FIELDS) {
+    const status = classify(values[f.key]);
+    fields[f.key] = status === "na" && lookupFailed ? "missing" : status;
+  }
   return fields;
 }
 
@@ -99,6 +105,8 @@ export function sbomConformance(sbom) {
     return {
       ref: c["bom-ref"],
       name: `${c.name || "unnamed"}${c.version ? "@" + c.version : ""}`,
+      lookupStatus: getProp(c, LOOKUP_STATUS_PROPERTY) || null,
+      reasons: parseKnownUnknowns(c),
       missing: TABLE5_FIELDS.filter((f) => fields[f.key] === "missing").map((f) => f.label),
       na: TABLE5_FIELDS.filter((f) => fields[f.key] === "na").map((f) => f.label),
     };
