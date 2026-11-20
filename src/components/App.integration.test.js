@@ -72,6 +72,15 @@ test("upload -> enrich -> VEX panel -> private and public export with CERT-In do
   expect(vex.vulnerabilities[0].affects[0].ref).toBe("urn:cdx:3e671687-395b-41f5-a30f-a58921a69b79/1#pkg:npm/lodash@4.17.20");
   fireEvent.click(screen.getByText("← Back to components"));
 
+  // conformance panel: the fixture has no dependency graph, so Dependencies is missing
+  fireEvent.click(screen.getByText(/CERT-In Conformance \(\d+(\.\d)?%\)/));
+  expect(await screen.findByText("Not conformant")).toBeInTheDocument();
+  const gapRow = screen.getByText("lodash@4.17.20").closest("tr");
+  expect(within(gapRow).getByText(/Component Dependencies/)).toBeInTheDocument();
+  fireEvent.click(within(gapRow).getByText("Edit")); // opens that component in the editor
+  expect(await screen.findByText("← Back")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("← Back"));
+
   // export dialog: author prefilled from metadata, choose the public distribution
   fireEvent.click(screen.getByTitle("Export SBOM with optional digital signature"));
   const dialog = document.querySelector(".export-dialog");

@@ -121,3 +121,11 @@
 .vex-empty {
   color: #777;
 }
+
+.conf-ok {
+  color: #2e7d32;
+}
+
+.conf-bad {
+  color: #c62828;
+}

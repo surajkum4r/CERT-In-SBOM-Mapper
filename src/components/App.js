@@ -16,6 +16,8 @@ import errorService from "../services/errorService";
 import cacheService from "../services/cacheService";
 import { ensureBomRefs, mergeVulnerabilities } from "../utils/sbomVulnerabilities";
 import VexPanel from "./VexPanel";
+import ConformancePanel from "./ConformancePanel";
+import { sbomConformance } from "../utils/conformance";
 import {
   AUTHOR_PROPERTY, PRACTICES, applyComponentFields, csafVex, cyclonedxVex, prepareForExport, sbomAuthor,
   setVulnerabilityAnalysis,
@@ -96,6 +98,7 @@ export default function App() {
   const [nameFilter, setNameFilter] = useState('');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [showVexPanel, setShowVexPanel] = useState(false);
+  const [showConformance, setShowConformance] = useState(false);
   const [exportAuthor, setExportAuthor] = useState(() => loadPrefs().author || "");
   const [exportPractices, setExportPractices] = useState(() => loadPrefs().practices || {});
   const [exportDistribution, setExportDistribution] = useState("private");
@@ -781,6 +784,24 @@ export default function App() {
         column.width = 15;
       });
 
+      // CERT-In Table 5 conformance sheet
+      const conformance = sbomConformance({ ...sbom, components, vulnerabilities });
+      const confSheet = workbook.addWorksheet('CERT-In Conformance');
+      confSheet.addRow(['Verdict', conformance.verdict]);
+      confSheet.addRow(['Fields supplied or declared NA', `${conformance.conformancePct}%`]);
+      confSheet.addRow(['Fields with real values', `${conformance.completenessPct}%`]);
+      confSheet.addRow([]);
+      const confHeader = confSheet.addRow(['Field', 'Present', 'Declared NA', 'Missing']);
+      confHeader.font = { bold: true };
+      conformance.fields.forEach((f) => confSheet.addRow([f.label, f.present, f.na, f.missing]));
+      confSheet.addRow([]);
+      const gapHeader = confSheet.addRow(['Component', 'Missing fields', 'Declared NA']);
+      gapHeader.font = { bold: true };
+      conformance.perComponent.forEach((c) => confSheet.addRow([c.name, c.missing.join(', '), c.na.join(', ')]));
+      confSheet.getColumn(1).width = 40;
+      confSheet.getColumn(2).width = 60;
+      confSheet.getColumn(3).width = 40;
+
       // Generate Excel file
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { 
@@ -1095,7 +1116,7 @@ export default function App() {
           {fetchProgress !== null && (
             <ProgressBar progress={fetchProgress} label={fetchLabel} />
           )}
-          {!editComponent && components.length > 0 && !showSignatureManager && !showVexPanel && (
+          {!editComponent && components.length > 0 && !showSignatureManager && !showVexPanel && !showConformance && (
             <>
               <h2 className={`main-heading ${isNewUpload ? 'heading-fresh' : ''}`}>
                 Components <span className="component-count">({filteredComponents.length} {nameFilter ? 'filtered' : 'loaded'})</span>
@@ -1251,8 +1272,31 @@ export default function App() {
             />
           )}
 
-          {sbom && !editComponent && !showSignatureManager && !showDuplicateDetector && !showVexPanel && (
+          {/* CERT-In Table 5 conformance */}
+          {!editComponent && showConformance && (
+            <ConformancePanel
+              sbom={{ ...sbom, components, vulnerabilities }}
+              onOpenComponent={(ref) => {
+                const idx = components.findIndex((c) => c["bom-ref"] === ref);
+                if (idx >= 0) {
+                  setShowConformance(false);
+                  selectComponent(idx);
+                }
+              }}
+              onBack={() => setShowConformance(false)}
+            />
+          )}
+
+          {sbom && !editComponent && !showSignatureManager && !showDuplicateDetector && !showVexPanel && !showConformance && (
             <div className="export-actions">
+              <button
+                onClick={() => setShowConformance(true)}
+                className="export-button teal"
+                title="Check which of the 21 CERT-In Table 5 fields are present, declared NA or missing"
+                disabled={fetchProgress !== null}
+              >
+                CERT-In Conformance ({sbomConformance({ ...sbom, components, vulnerabilities }).conformancePct}%)
+              </button>
               <button
                 onClick={() => setShowVexPanel(true)}
                 className="export-button red"
