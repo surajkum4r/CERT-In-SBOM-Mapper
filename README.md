@@ -95,21 +95,47 @@ Notes:
 
 ### What gets auto-populated
 
-- Patch Status: via OSV (fixed versions) and registry latest version.  
-  - Examples: `Update available (>= 2.8.9)`, `Update available (latest 1.2.3)`, `Up to date`.
-- Release Date: from package registries (npm/PyPI/Maven); GitHub created_at as fallback when token is set.  
-- Criticality: highest of:  
-  1) SBOM `vulnerabilities[].ratings[].severity` matched by `affects[].ref` → component `bom-ref`  
-  2) OSV CVSS score mapping  
-  3) Count-based fallback (if needed)
-- End-of-Life Date: from `endoflife.date` for known products (nodejs, python, java). Library EOL is usually not published.
+Values follow the CERT-In Technical Guidelines v2.0 (09.07.2025), Table 5.
+
+| Property | How it is filled |
+|---|---|
+| Patch Status | Checked against OSV for the component's **exact version**. Shows `Update available (>= X)`, where X is the fix on the component's own release line (Django 4.2.7 → 4.2.30, not 6.x). Prefixed `URGENT - actively exploited (CISA KEV)` when a vulnerability is in CISA's Known Exploited Vulnerabilities catalogue. `No fix available (N known vulnerabilities)` when no fix is published. `NA` when the component could not be checked (never a false "Up to date"). |
+| Vulnerabilities | Every finding is added to the exported SBOM's `vulnerabilities[]`, linked to the component (`affects`), with CVSS score, CWE, fix recommendation, CISA KEV status, EPSS exploit probability and a P0–P3 priority. Records for the same flaw from different databases (GHSA / PYSEC / Debian…) are merged under the CVE. |
+| Release Date | Release date of **this version** (npm `time[version]`, PyPI release files, deps.dev for Maven/Go/Cargo/NuGet). |
+| End-of-Life Date | endoflife.date, matched against its product list, with aliases (e.g. `log4j-core` → log4j, `spring-core` → spring-framework). Shows `Not announced` while a cycle is supported and `Ended (date not published)` when appropriate. Distro packages (deb/rpm/apk) are skipped: the distribution supports them. |
+| Criticality | `Critical` if a vulnerability is actively exploited (KEV) or the package is reported malicious; otherwise the highest of the SBOM's own ratings and the OSV severity. |
+| Component Supplier | The supplying **entity**: SBOM `supplier` / registry author, or the purl namespace (Maven groupId, npm scope, Go host org). |
+| Component Origin | From the licence: open-source licence → Open-source, proprietary terms → Proprietary. |
+| Usage Restrictions | Licence family analysis: permissive / weak copyleft (LGPL, MPL, EPL) / copyleft (GPL) / strong copyleft (AGPL) / restricted use (non-commercial, BUSL). Export control is marked as not assessed. |
+| Executable / Archive / Structured | From the component type and package type (a jar/wheel/tgz library is an archive and not executable; an `application`/`container` is executable). |
+| Unique Identifier | The component's purl, kept **valid** so scanners can match it. Components without one get `pkg:generic/<supplier>/<name>@<version>`, which is the CERT-In `pkg:supplier/Org/Component@Version` shape. |
+
+#### Vulnerability sources
+
+| Source | Covers |
+|---|---|
+| [OSV](https://osv.dev) | npm, PyPI, Maven, Go, crates.io, NuGet, RubyGems, Packagist, Hex, Pub; **Debian, Ubuntu and Alpine OS packages** (queried by distro release and source package); GitHub advisories; malicious-package reports |
+| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | actively exploited CVEs (loaded from CISA's official [`cisagov/kev-data`](https://github.com/cisagov/kev-data) mirror, which browsers can fetch) |
+| [FIRST EPSS](https://www.first.org/epss/) | probability that a CVE is exploited in the next 30 days |
+
+Priority: **P0** CISA KEV · **P1** critical severity, EPSS ≥ 10% or a malicious package · **P2** high · **P3** other.
 
 ### Considerations and limitations
 
-- OSV may not always return severity or fixed versions immediately for new advisories; in such cases Criticality may be Unknown and Patch Status may show `Update available (>= NA)`.
-- endoflife.date publishes product/platform EOL, not library EOL. Many Maven libraries legitimately have no EOL.
+- Components without an ecosystem purl (vendored C/C++ code, `pkg:generic`, internal libraries) cannot be matched by OSV. They show Patch Status `NA` with a "Vulnerabilities not checked" note. To cover them, add a CPE and scan with an NVD-capable tool, or fill the fields manually.
+- NVD is not queried from the browser: it does not allow cross-origin requests, and an API key would be exposed in client-side code.
+- endoflife.date publishes product/platform EOL, not library EOL. Many libraries legitimately show `NA`.
+- Criticality is derived from vulnerability severity. CERT-In defines criticality as the component's importance to the application, so review and adjust it for business-critical components.
 - GitHub calls are skipped if no token is set, to avoid 401/429 rate limits.
 - Background fetching is batched; large SBOMs can take time to complete.
+
+### Running the tests
+
+```
+CI=true npm test
+```
+
+The tests mock all network calls.
 
 ---
 

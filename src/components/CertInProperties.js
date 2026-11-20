@@ -51,15 +51,21 @@ export function CertInProperties({ properties, onChange }) {
 
       <label className="certin-input-label">
         {renderLabel("Patch Status")}:{" "}
-        <select
-          value={getPropValue("Patch Status") || "NA"}
+        {/* free text: computed values carry the fix version, e.g. "Update available (>= 2.17.1)" */}
+        <input
+          type="text"
+          list="certin-patch-status-options"
+          value={getPropValue("Patch Status") || ""}
           onChange={(e) => onChange("Patch Status", e.target.value)}
-          className="certin-select"
-        >
-          <option>Up to date</option>
-          <option>NA</option>
-          <option>Update available</option>
-        </select>
+          className="certin-input"
+          placeholder="e.g. Up to date / Update available (>= 2.17.1)"
+        />
+        <datalist id="certin-patch-status-options">
+          <option value="Up to date" />
+          <option value="Update available" />
+          <option value="No fix available" />
+          <option value="NA" />
+        </datalist>
       </label>
 
       {["Release Date", "End-of-Life Date"].map((key) => {
@@ -93,6 +99,7 @@ export function CertInProperties({ properties, onChange }) {
           className="certin-select"
         >
           <option value="">-- Select --</option>
+          <option>NA</option>
           <option>Critical</option>
           <option>High</option>
           <option>Medium</option>
@@ -112,6 +119,7 @@ export function CertInProperties({ properties, onChange }) {
               <option value="">-- Select --</option>
               <option>Yes</option>
               <option>No</option>
+              <option>NA</option>
             </select>
           </label>
         )
@@ -134,16 +142,14 @@ export function CertInProperties({ properties, onChange }) {
 
       <label className="certin-input-label">
         {renderLabel("Component Supplier")}:{" "}
-        <select
+        {/* CERT-In asks for the supplying entity (e.g. "Apache Software Foundation"), not a category */}
+        <input
+          type="text"
           value={getPropValue("Component Supplier") || ""}
           onChange={(e) => onChange("Component Supplier", e.target.value)}
-          className="certin-select"
-        >
-          <option value="">-- Select --</option>
-          <option>Vendor</option>
-          <option>Third-party</option>
-          <option>Open-source</option>
-        </select>
+          className="certin-input"
+          placeholder="Organisation that supplied the component"
+        />
       </label>
 
       <label className="certin-input-label">
@@ -154,6 +160,7 @@ export function CertInProperties({ properties, onChange }) {
           className="certin-select"
         >
           <option value="">-- Select --</option>
+          <option>NA</option>
           <option>Proprietary</option>
           <option>Open-source</option>
           <option>Third-party vendor</option>

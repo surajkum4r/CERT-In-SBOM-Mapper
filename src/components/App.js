@@ -14,6 +14,7 @@ import ProgressBar from "./ProgressBar";
 import Notification from "./Notification";
 import errorService from "../services/errorService";
 import cacheService from "../services/cacheService";
+import { ensureBomRefs, mergeVulnerabilities } from "../utils/sbomVulnerabilities";
 
 const CERT_IN_PROPERTIES = [
   { key: "Patch Status", label: "Patch Status" },
@@ -195,7 +196,7 @@ export default function App() {
       try {
         const json = JSON.parse(evt.target.result);
         if (json.components) {
-          const updatedComponents = json.components.map((component) => {
+          const updatedComponents = ensureBomRefs(json.components).map((component) => {
             let props = component.properties ? [...component.properties] : [];
             CERT_IN_PROPERTIES.forEach(({ key }) => {
               if (!props.find((p) => p.name === key)) {
@@ -248,8 +249,11 @@ export default function App() {
                 setFetchLabel('Loading cached results...');
                 
                 const cachedResult = cacheService.getFileResult(json);
-                setComponents(cachedResult);
-                setSbom((prev) => ({ ...(prev || {}), components: cachedResult }));
+                const cachedComponents = Array.isArray(cachedResult) ? cachedResult : cachedResult.components;
+                const cachedVulns = Array.isArray(cachedResult) ? (json.vulnerabilities || []) : cachedResult.vulnerabilities;
+                setComponents(cachedComponents);
+                setVulnerabilities(cachedVulns);
+                setSbom((prev) => ({ ...(prev || {}), components: cachedComponents, vulnerabilities: cachedVulns }));
                 
                 setFetchProgress(100);
                 
@@ -304,11 +308,15 @@ export default function App() {
                 
                 return { ...c, properties: newProps };
               });
+              // Vulnerabilities found via OSV go into the SBOM's vulnerabilities[] (CERT-In field 8),
+              // merged with those the uploaded SBOM already had.
+              const mergedVulns = mergeVulnerabilities(json.vulnerabilities || [], merged, results);
               setComponents(merged);
-              setSbom((prev) => ({ ...(prev || {}), components: merged }));
+              setVulnerabilities(mergedVulns);
+              setSbom((prev) => ({ ...(prev || {}), components: merged, vulnerabilities: mergedVulns }));
               
               // Cache the entire processing result for future use
-              cacheService.setFileResult(json, merged);
+              cacheService.setFileResult(json, { components: merged, vulnerabilities: mergedVulns });
               if (process.env.NODE_ENV === 'development') {
                 console.log('[FILE_CHECKSUM] Cached entire SBOM processing result');
               }
