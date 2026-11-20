@@ -38,8 +38,11 @@ While exploring few paid and open-source tools, we found it does not fully satis
 
 - Upload tool-generated CycloneDX SBOM files  
 - Edit and complete missing mandatory fields as per CERT-In guidelines  
-- Export the updated SBOM in CycloneDX JSON and Excel formats for compliance
 - Background auto-population for CERT-In properties (Patch Status, Release Date, Criticality, etc.)
+- Vulnerabilities from OSV, CISA KEV and EPSS written into the SBOM's `vulnerabilities[]`, with P0–P3 priority
+- **Vulnerability Status (VEX)** panel: record the CERT-In section 6 status of each vulnerability (Not affected / Affected / Fixed / Under Investigation) and export **CycloneDX VEX** and a **CSAF 2.0** advisory
+- Export dialog with the CERT-In document details: **Author of SBOM Data**, assembly **Timestamp**, the Table 5 **Practices and Processes** declaration, and a **public / private** SBOM (5.3.2)
+- Export the updated SBOM in CycloneDX JSON (optionally digitally signed), CSV, Excel and PDF
 
 ---
 
@@ -108,6 +111,9 @@ Values follow the CERT-In Technical Guidelines v2.0 (09.07.2025), Table 5.
 | Component Origin | From the licence: open-source licence → Open-source, proprietary terms → Proprietary. |
 | Usage Restrictions | Licence family analysis: permissive / weak copyleft (LGPL, MPL, EPL) / copyleft (GPL) / strong copyleft (AGPL) / restricted use (non-commercial, BUSL). Export control is marked as not assessed. |
 | Executable / Archive / Structured | From the component type and package type (a jar/wheel/tgz library is an archive and not executable; an `application`/`container` is executable). |
+| Component Description / Licence / Hashes | Written into the component's own CycloneDX fields when the SBOM has none: description and licence from the registry (an SPDX `id` only for real SPDX identifiers, otherwise a licence `name`), hashes of this version's artefact from npm (SHA-512, SHA-1) and PyPI (SHA-256; `cert-in:hash_source` names the file). Existing values are never overwritten. |
+| Author of SBOM Data | From the SBOM's `metadata.authors` / manufacturer / supplier, or the author entered in the export dialog. |
+| Timestamp | Set to the export time (the SBOM data assembly time); the generator's original time is kept as `cert-in:source_timestamp`. |
 | Unique Identifier | The component's purl, kept **valid** so scanners can match it. Components without one get `pkg:generic/<supplier>/<name>@<version>`, which is the CERT-In `pkg:supplier/Org/Component@Version` shape. |
 
 #### Vulnerability sources
@@ -120,10 +126,27 @@ Values follow the CERT-In Technical Guidelines v2.0 (09.07.2025), Table 5.
 
 Priority: **P0** CISA KEV · **P1** critical severity, EPSS ≥ 10% or a malicious package · **P2** high · **P3** other.
 
+### Public and private SBOMs (CERT-In 5.3.2)
+
+The export dialog offers two distributions:
+
+- **Private:** the full SBOM, including `vulnerabilities[]`, Patch Status and notes.
+- **Public:** the same SBOM without vulnerability information (`vulnerabilities[]`, Patch Status and Comments or Notes are removed). Share this one widely, and the private one only with authorised parties.
+
+### VEX and CSAF (CERT-In section 6)
+
+Open **Vulnerability Status (VEX)** after processing. New findings start as *Under Investigation*. Set each one to *Not affected* (with a justification such as "vulnerable code not reachable"), *Affected* or *Fixed*, and add details. Then export:
+
+- **CycloneDX VEX:** references the SBOM's components by BOM-Link (`urn:cdx:<serial>/<version>#<bom-ref>`).
+- **CSAF 2.0 (csaf_vex profile):** needs a publisher name and namespace URL.
+
+The statuses are also kept in the SBOM's own `vulnerabilities[].analysis`.
+
 ### Considerations and limitations
 
 - Components without an ecosystem purl (vendored C/C++ code, `pkg:generic`, internal libraries) cannot be matched by OSV. They show Patch Status `NA` with a "Vulnerabilities not checked" note. To cover them, add a CPE and scan with an NVD-capable tool, or fill the fields manually.
 - NVD is not queried from the browser: it does not allow cross-origin requests, and an API key would be exposed in client-side code.
+- Hashes are only added where the registry exposes them to browsers (npm, PyPI). Maven Central and most OS package repositories do not allow cross-origin requests, so those components keep whatever hashes the uploaded SBOM had.
 - endoflife.date publishes product/platform EOL, not library EOL. Many libraries legitimately show `NA`.
 - Criticality is derived from vulnerability severity. CERT-In defines criticality as the component's importance to the application, so review and adjust it for business-critical components.
 - GitHub calls are skipped if no token is set, to avoid 401/429 rate limits.

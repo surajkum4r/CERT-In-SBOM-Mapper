@@ -4,6 +4,15 @@
 import cacheService from "./cacheService";
 import { parsePurl } from "../utils/purl";
 
+function base64ToHex(b64) {
+  try {
+    const bin = atob(b64);
+    return Array.from(bin, (ch) => ch.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}
+
 const DEPS_DEV_SYSTEM = { maven: "MAVEN", golang: "GO", cargo: "CARGO", nuget: "NUGET", npm: "NPM", pypi: "PYPI" };
 
 class PackageRegistryService {
@@ -57,6 +66,7 @@ class PackageRegistryService {
             releaseDate: result?.releaseDate || dd.releaseDate,
             license: result?.license || dd.license,
             latestVersion: result?.latestVersion || null,
+            hashes: result?.hashes || [],
           };
         }
       }
@@ -82,6 +92,13 @@ class PackageRegistryService {
       repository: (ver.repository || data?.repository)?.url || null,
       license: this.licenseString(ver.license || data?.license),
       author: typeof author === "string" ? author.split("<")[0].trim() : author?.name || null,
+      // hashes of this version's tarball
+      hashes: [
+        ...(String(ver.dist?.integrity || "").startsWith("sha512-")
+          ? [{ alg: "SHA-512", content: base64ToHex(ver.dist.integrity.slice(7)) }] : []),
+        ...(ver.dist?.shasum ? [{ alg: "SHA-1", content: ver.dist.shasum }] : []),
+      ].filter((h) => h.content),
+      hashSource: ver.dist?.tarball ? `npm tarball ${ver.dist.tarball.split("/").pop()}` : null,
     };
   }
 
@@ -102,6 +119,9 @@ class PackageRegistryService {
       repository: info.project_urls?.Source || info.project_urls?.Repository || null,
       license,
       author: info.maintainer || info.author || (info.author_email || "").split("<")[0].trim() || null,
+      // PyPI publishes one digest per file; the source distribution is used when present
+      hashes: sdist?.digests?.sha256 ? [{ alg: "SHA-256", content: sdist.digests.sha256 }] : [],
+      hashSource: sdist?.filename ? `PyPI ${sdist.filename}` : null,
     };
   }
 

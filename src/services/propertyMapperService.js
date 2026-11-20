@@ -8,7 +8,7 @@ import errorService from "./errorService";
 import cacheService from "./cacheService";
 import { buildPurl, isValidPurl, slug } from "../utils/purl";
 import { versionLt } from "../utils/version";
-import { componentLicense, isOpenSourceLicense, isProprietaryLicense, usageRestrictions } from "../utils/license";
+import { componentLicense, isOpenSourceLicense, isProprietaryLicense, toCycloneDxLicenses, usageRestrictions } from "../utils/license";
 
 // purl types distributed as archives (jar, wheel, tgz, gem, nupkg, crate, deb, rpm, apk, ...)
 const ARCHIVE_TYPES = new Set(["maven", "npm", "pypi", "gem", "nuget", "cargo", "deb", "rpm", "apk", "composer", "hex",
@@ -80,8 +80,15 @@ class PropertyMapperService {
       "Component Supplier": supplier,
       "Component Origin": this.determineOrigin(component, license, ghData, supplier),
       "Unique Identifier": this.generateUniqueIdentifier(component, pkgInfo, supplier),
-      // not a CERT-In property: vulnerability records for the SBOM's vulnerabilities[] array
+      // not CERT-In properties: data written into the SBOM itself by App.js
       _vulnerabilities: vulnData?.vulns || [],
+      // native CycloneDX fields (Table 5 fields 3, 5, 14), applied only where the SBOM has none
+      _componentFields: {
+        description: pkgData?.description || null,
+        licenses: componentLicense(component) ? null : toCycloneDxLicenses(pkgData?.license || ghData?.license),
+        hashes: Array.isArray(component.hashes) && component.hashes.length ? null : (pkgData?.hashes?.length ? pkgData.hashes : null),
+        hashSource: pkgData?.hashSource || null,
+      },
     };
     return props;
   }

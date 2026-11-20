@@ -28,6 +28,7 @@ export const descriptions = {
   "Structured Property": "Descriptors defining the organized format of data within a component listed in the SBOM.",
   "Unique Identifier": "A distinct code assigned to each component to track ownership and version changes, ensuring accurate management.",
   "External References": "References such as documentation, repositories, or websites related to the component.",
+  "Author of SBOM Data": "The name of the entity that creates the SBOM data for this component (CERT-In Table 5, field 16).",
 };
 
 export function CertInProperties({ properties, onChange }) {
@@ -125,7 +126,7 @@ export function CertInProperties({ properties, onChange }) {
         )
       )}
 
-      {["Usage Restrictions", "Comments or Notes", "Unique Identifier"].map(
+      {["Usage Restrictions", "Comments or Notes", "Unique Identifier", "Author of SBOM Data"].map(
         (key) => (
           <label key={key} className="certin-input-label">
             {renderLabel(key)}:{" "}
