@@ -3,6 +3,7 @@
 
 import cacheService from "./cacheService";
 import { parsePurl } from "../utils/purl";
+import { sortVersions } from "../utils/version";
 
 function base64ToHex(b64) {
   try {
@@ -11,6 +12,13 @@ function base64ToHex(b64) {
   } catch {
     return null;
   }
+}
+
+// Highest release version, ignoring pre-releases (alpha, beta, rc, milestone, snapshot)
+export function latestStable(versions) {
+  const stable = (versions || []).filter((v) => v && !/(alpha|beta|rc|cr|milestone|snapshot|preview|-m\d|\.m\d|-ea)/i.test(v));
+  const sorted = sortVersions(stable);
+  return sorted.length ? sorted[sorted.length - 1] : null;
 }
 
 const DEPS_DEV_SYSTEM = { maven: "MAVEN", golang: "GO", cargo: "CARGO", nuget: "NUGET", npm: "NPM", pypi: "PYPI" };
@@ -126,12 +134,13 @@ class PackageRegistryService {
   }
 
   async fetchMavenData(group, artifact, version) {
-    // latest version from Maven Central search; version-specific date/licence come from deps.dev
+    // Maven Central (search.maven.org, repo1) does not allow browser cross-origin requests;
+    // deps.dev does, and provides the version list, release date and licence.
+    const name = encodeURIComponent(`${group}:${artifact}`);
     let latestVersion = null;
     try {
-      const q = encodeURIComponent(`g:"${group}" AND a:"${artifact}"`);
-      const res = await fetch(`https://search.maven.org/solrsearch/select?q=${q}&rows=1&wt=json`);
-      if (res.ok) latestVersion = (await res.json())?.response?.docs?.[0]?.latestVersion || null;
+      const res = await fetch(`https://api.deps.dev/v3/systems/MAVEN/packages/${name}`);
+      if (res.ok) latestVersion = latestStable(((await res.json()).versions || []).map((v) => v.versionKey?.version));
     } catch {
       // optional
     }
@@ -144,6 +153,7 @@ class PackageRegistryService {
       repository: null,
       license: dd?.license || null,
       author: null,
+      hashes: [], // not available to browsers for Maven Central; enter in the component editor if needed
     };
   }
 

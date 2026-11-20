@@ -216,3 +216,22 @@ describe("cacheService checksums", () => {
       .not.toBe(cacheService.generateComponentChecksum(ref([{ type: "vcs", url: "https://b" }])));
   });
 });
+
+describe("Maven via deps.dev (Maven Central blocks browser requests)", () => {
+  const { latestStable } = require("./packageRegistryService");
+  test("latest stable skips pre-releases", () => {
+    expect(latestStable(["2.14.1", "2.25.4", "3.0.0-beta3", "3.0.0-rc1", "2.25.3"])).toBe("2.25.4");
+    expect(latestStable(["5.3.0", "6.0.0-M5", "6.0.0.M1"])).toBe("5.3.0");
+  });
+  test("latest version, release date and licence come from deps.dev", async () => {
+    mockFetch([
+      ["/packages/org.apache.logging.log4j%3Alog4j-core/versions/", () => json({ publishedAt: "2021-03-07T01:02:03Z", licenses: ["Apache-2.0"] })],
+      ["/packages/org.apache.logging.log4j%3Alog4j-core", () => json({ versions: [{ versionKey: { version: "2.14.1" } },
+        { versionKey: { version: "2.25.4" } }, { versionKey: { version: "3.0.0-beta3" }, isDefault: true }] })],
+    ]);
+    const reg = new PackageRegistryService();
+    const data = await reg.fetchPackageData(reg.extractPackageInfo({ purl: "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1" }));
+    expect(data).toMatchObject({ latestVersion: "2.25.4", releaseDate: "07-03-2021", license: "Apache-2.0" });
+    expect(calls.some((c) => c.url.includes("search.maven.org"))).toBe(false);
+  });
+});
