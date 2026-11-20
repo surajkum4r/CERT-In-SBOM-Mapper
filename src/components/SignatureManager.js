@@ -9,6 +9,27 @@ const SignatureManager = ({ sbom, onBackToTable }) => {
   const [signatureFile, setSignatureFile] = useState(null);
   const [sbomFile, setSbomFile] = useState(null);
   const [verificationSbom, setVerificationSbom] = useState(null);
+  const [publicKeyFile, setPublicKeyFile] = useState(null);
+  const [publicKeyPem, setPublicKeyPem] = useState(null);
+
+  // The signer's public key: what a recipient needs to confirm authenticity (CERT-In 5.4)
+  const handlePublicKeyUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    setPublicKeyFile(file);
+    setSignatureStatus(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = String(e.target.result || "");
+      if (text.includes("BEGIN PUBLIC KEY")) {
+        setPublicKeyPem(text);
+      } else {
+        setPublicKeyPem(null);
+        setSignatureStatus({ type: 'error', message: 'Not a PEM public key (expected "-----BEGIN PUBLIC KEY-----").' });
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const handleSignatureFileUpload = (event) => {
     const file = event.target.files[0];
@@ -64,7 +85,7 @@ const SignatureManager = ({ sbom, onBackToTable }) => {
       const signatureFileContent = JSON.parse(signatureContent);
 
       // Verify signature using standalone service with separate signature file
-      const result = await signatureService.verifySBOM(verificationSbom, signatureFileContent);
+      const result = await signatureService.verifySBOM(verificationSbom, signatureFileContent, publicKeyPem);
       
       if (result.valid) {
         setSignatureStatus({
@@ -145,7 +166,30 @@ const SignatureManager = ({ sbom, onBackToTable }) => {
       </div>
 
       <div className="signature-section">
-        <h4>Step 3: Verify Signature</h4>
+        <h4>Step 3: Upload the Signer's Public Key</h4>
+        <div className="signature-file-upload">
+          <p>
+            Upload the public key (.pem) published by whoever signed the SBOM. Only the public key is needed; if you signed
+            in this browser session, the session's key is used when none is uploaded.
+          </p>
+          <div className="file-input-group">
+            <label htmlFor="publicKeyFileInput">Public Key (.pem):</label>
+            <input
+              id="publicKeyFileInput"
+              type="file"
+              accept=".pem,.pub,.key,.txt"
+              onChange={handlePublicKeyUpload}
+              className="file-input"
+            />
+            {publicKeyFile && (
+              <span className="file-selected">✅ {publicKeyFile.name}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="signature-section">
+        <h4>Step 4: Verify Signature</h4>
         <div className="signature-actions">
           <button 
             onClick={verifySBOM} 

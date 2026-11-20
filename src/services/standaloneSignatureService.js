@@ -6,7 +6,9 @@ class StandaloneSignatureService {
   constructor() {
     this.privateKey = null;
     this.publicKey = null;
-    this.signatureAlgorithm = 'RSA-SHA256';
+    // RSA-PSS (salt 32) with SHA-256 is what sign()/verify() actually use; the old label "RSA-SHA256"
+    // usually means PKCS#1 v1.5 and misled external verifiers. Verification accepts either label.
+    this.signatureAlgorithm = 'RSA-PSS-SHA256';
   }
 
   // Generate RSA key pair using Web Crypto API
@@ -292,12 +294,19 @@ class StandaloneSignatureService {
   }
 
   // Verify SBOM signature from separate signature file
-  async verifySBOM(sbomData, signatureFileContent) {
+  // Verification needs only the signer's PUBLIC key: passed in (a recipient's uploaded .pem) or the one
+  // stored in this session. Previously both keys were required, so only the signing tab could verify.
+  async verifySBOM(sbomData, signatureFileContent, publicKeyPem = null) {
     try {
-      // Always load keys from storage to ensure we have the latest keys
-      const keys = this.loadKeys();
-      if (!keys) {
-        return { valid: false, error: 'No public key found. Please generate keys first.' };
+      let storedPublicKey = null;
+      try {
+        storedPublicKey = sessionStorage.getItem('sbom_public_key');
+      } catch {
+        // storage unavailable
+      }
+      const keys = { publicKey: publicKeyPem || storedPublicKey };
+      if (!keys.publicKey) {
+        return { valid: false, error: "No public key. Upload the signer's public key (.pem) to verify." };
       }
       
       // Debug: Log key data

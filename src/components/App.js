@@ -508,9 +508,10 @@ export default function App() {
       const signatureService = new StandaloneSignatureService();
       
       // Generate or upload keys based on selected option
+      let generatedKeys = null;
       if (exportKeyOption === 'generate') {
         // Always generate new keys when "Generate new key pair" is selected
-        await signatureService.generateAndSaveKeys();
+        generatedKeys = await signatureService.generateAndSaveKeys();
         showNotification("Generated new key pair for signing", 'success');
       } else if (exportKeyOption === 'upload') {
         // Check if files are selected for inline upload
@@ -541,8 +542,17 @@ export default function App() {
       const signatureStr = JSON.stringify(result.signatureFile.content, null, 2);
       const signatureBlob = new Blob([signatureStr], { type: "application/json" });
       saveAs(signatureBlob, result.signatureFile.filename);
-      
-      showNotification("SBOM exported with signature successfully!", 'success');
+
+      // A generated key pair must leave the browser: without the public key nobody can verify the
+      // signature (CERT-In 5.4), and without the private key the same identity cannot sign again.
+      if (generatedKeys) {
+        saveAs(new Blob([generatedKeys.publicKey], { type: "application/x-pem-file" }), "sbom-signing-public.pem");
+        saveAs(new Blob([generatedKeys.privateKey], { type: "application/x-pem-file" }), "sbom-signing-private.pem");
+        showNotification("SBOM signed. Share sbom-signing-public.pem with recipients so they can verify it; keep "
+          + "sbom-signing-private.pem secret and re-use it via \"Upload your own keys\" for future exports.", 'success', 12000);
+      } else {
+        showNotification("SBOM exported with signature successfully!", 'success');
+      }
       setShowExportDialog(false);
     } catch (error) {
       showNotification("Failed to export with signature: " + error.message, 'error');
@@ -1446,7 +1456,7 @@ export default function App() {
                         clearAllFileStates();
                       }}
                     />
-                    <span>Generate new key pair</span>
+                    <span>Generate new key pair <small>(the public and private key files are saved with the SBOM)</small></span>
                   </label>
                 </div>
                 <div className="key-option">
