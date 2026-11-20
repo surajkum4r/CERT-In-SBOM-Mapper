@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "react";
 import "../styles/components/VexPanel.css";
-import { VEX_JUSTIFICATIONS, VEX_STATUSES, statusOf } from "../services/certInDocumentService";
+import {
+  REMEDIATION_DATE_PROPERTY, RESTART_PROPERTY, RESTART_REQUIRED, VEX_JUSTIFICATIONS, VEX_RESPONSES, VEX_STATUSES, statusOf,
+} from "../services/certInDocumentService";
 
 const prop = (v, name) => (v.properties || []).find((p) => p.name === name)?.value;
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -11,6 +13,13 @@ export default function VexPanel({ vulnerabilities, components, onChange, onExpo
   const [filter, setFilter] = useState("all");
   const [publisher, setPublisher] = useState("");
   const [namespace, setNamespace] = useState("");
+  const [expanded, setExpanded] = useState(() => new Set());
+  const toggle = (index) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(index)) next.delete(index);
+    else next.add(index);
+    return next;
+  });
 
   const names = useMemo(() => {
     const m = new Map();
@@ -30,14 +39,11 @@ export default function VexPanel({ vulnerabilities, components, onChange, onExpo
     return out;
   }, [vulnerabilities]);
 
-  const update = (index, v, patch) => {
-    const current = statusOf(v);
-    onChange(index, {
-      status: patch.status ?? current.key,
-      justification: patch.justification ?? v.analysis?.justification,
-      detail: patch.detail ?? v.analysis?.detail,
-      response: v.analysis?.response,
-    });
+  // only the changed fields are sent; setVulnerabilityAnalysis keeps the rest
+  const update = (index, v, patch) => onChange(index, patch);
+  const toggleResponse = (index, v, value) => {
+    const current = v.analysis?.response || [];
+    update(index, v, { response: current.includes(value) ? current.filter((r) => r !== value) : [...current, value] });
   };
 
   return (
@@ -70,7 +76,7 @@ export default function VexPanel({ vulnerabilities, components, onChange, onExpo
             <thead>
               <tr>
                 <th>Priority</th><th>ID</th><th>Component(s)</th><th>Severity</th><th>Exploitation</th>
-                <th>Status</th><th>Justification</th><th>Detail / response</th>
+                <th>Status</th><th>Justification</th><th>Detail</th><th />
               </tr>
             </thead>
             <tbody>
@@ -78,8 +84,10 @@ export default function VexPanel({ vulnerabilities, components, onChange, onExpo
                 const kev = prop(v, "cert-in:kev_date_added");
                 const epss = prop(v, "cert-in:epss");
                 const r = v.ratings?.[0] || {};
+                const open = expanded.has(index);
                 return (
-                  <tr key={`${v.id}-${index}`} className={kev ? "vex-row kev" : "vex-row"}>
+                  <React.Fragment key={`${v.id}-${index}`}>
+                  <tr className={kev ? "vex-row kev" : "vex-row"}>
                     <td>{String(prop(v, "cert-in:priority") || "").split(" - ")[0] || "-"}</td>
                     <td>
                       <a href={v.source?.url || `https://osv.dev/vulnerability/${v.id}`} target="_blank" rel="noreferrer">{v.id}</a>
@@ -107,10 +115,54 @@ export default function VexPanel({ vulnerabilities, components, onChange, onExpo
                       ) : "-"}
                     </td>
                     <td>
-                      <input type="text" value={v.analysis?.detail || ""} placeholder="Analysis, workaround, fix version..."
+                      <input type="text" value={v.analysis?.detail || ""} placeholder="Analysis, impact, fix version..."
                         onChange={(e) => update(index, v, { detail: e.target.value })} aria-label={`Detail for ${v.id}`} />
                     </td>
+                    <td>
+                      <button className="btn btn-secondary btn-sm" onClick={() => toggle(index)} aria-expanded={open}
+                        aria-label={`Remediation details for ${v.id}`}>
+                        {open ? "Hide" : "Remediation"}
+                      </button>
+                    </td>
                   </tr>
+                  {open && (
+                    <tr className="vex-details">
+                      <td colSpan={9}>
+                        <div className="vex-details-grid">
+                          <fieldset>
+                            <legend>Response</legend>
+                            {VEX_RESPONSES.map((resp) => (
+                              <label key={resp.cdx}>
+                                <input type="checkbox" checked={(v.analysis?.response || []).includes(resp.cdx)}
+                                  onChange={() => toggleResponse(index, v, resp.cdx)} /> {resp.label}
+                              </label>
+                            ))}
+                          </fieldset>
+                          <label>Workaround
+                            <textarea rows={2} value={v.workaround || ""} placeholder="Steps to mitigate until a fix is applied"
+                              onChange={(e) => update(index, v, { workaround: e.target.value })} aria-label={`Workaround for ${v.id}`} />
+                          </label>
+                          <label>Restart / downtime required
+                            <select value={prop(v, RESTART_PROPERTY) || ""} aria-label={`Restart required for ${v.id}`}
+                              onChange={(e) => update(index, v, { restartRequired: e.target.value })}>
+                              <option value="">-- Not specified --</option>
+                              {RESTART_REQUIRED.map((rr) => <option key={rr.csaf} value={rr.csaf}>{rr.label}</option>)}
+                            </select>
+                          </label>
+                          <label>Fix / remediation available on
+                            <input type="date" value={prop(v, REMEDIATION_DATE_PROPERTY) || ""} aria-label={`Remediation date for ${v.id}`}
+                              onChange={(e) => update(index, v, { remediationDate: e.target.value })} />
+                          </label>
+                          <div className="vex-dates">
+                            {v.published && <div>Published: {String(v.published).slice(0, 10)}</div>}
+                            {v.analysis?.firstIssued && <div>Status first set: {v.analysis.firstIssued.slice(0, 10)}</div>}
+                            {v.analysis?.lastUpdated && <div>Last updated: {v.analysis.lastUpdated.slice(0, 10)}</div>}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

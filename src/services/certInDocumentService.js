@@ -34,6 +34,29 @@ export const VEX_JUSTIFICATIONS = [
   { cdx: "protected_at_perimeter", label: "Protected at perimeter", csaf: "inline_mitigations_already_exist" },
   { cdx: "protected_by_mitigating_control", label: "Protected by mitigating control", csaf: "inline_mitigations_already_exist" },
 ];
+// Section 6(a): remediation, workarounds and restart/downtime required
+export const VEX_RESPONSES = [
+  { cdx: "update", label: "Update available" },
+  { cdx: "workaround_available", label: "Workaround available" },
+  { cdx: "rollback", label: "Roll back" },
+  { cdx: "can_not_fix", label: "Cannot fix" },
+  { cdx: "will_not_fix", label: "Will not fix" },
+];
+// CSAF 2.0 restart_required categories (3.2.3.12.7)
+export const RESTART_REQUIRED = [
+  { csaf: "none", label: "No restart" },
+  { csaf: "vulnerable_component", label: "Restart the component" },
+  { csaf: "service", label: "Restart the service" },
+  { csaf: "parent", label: "Restart the parent component" },
+  { csaf: "dependencies", label: "Restart dependent components" },
+  { csaf: "connected", label: "Restart connected components" },
+  { csaf: "machine", label: "Reboot the machine" },
+  { csaf: "zone", label: "Restart the security zone" },
+  { csaf: "system", label: "Restart the whole system" },
+];
+export const RESTART_PROPERTY = "cert-in:restart_required";
+export const REMEDIATION_DATE_PROPERTY = "cert-in:remediation_date";
+
 // Information that reveals vulnerability status; removed from the public SBOM (5.3.2)
 export const PRIVATE_PROPERTIES = ["Patch Status", "Comments or Notes"];
 
@@ -162,16 +185,38 @@ export function toPublic(sbom) {
 }
 
 // ------------------------------------------------------------------ VEX (section 6)
-export function setVulnerabilityAnalysis(vulnerabilities, index, { status, justification, detail, response }) {
+// Fields not passed in are kept as they were.
+export function setVulnerabilityAnalysis(vulnerabilities, index, update) {
   return vulnerabilities.map((v, i) => {
     if (i !== index) return v;
+    const prev = v.analysis || {};
+    const status = update.status ?? statusOf(v).key;
     const spec = VEX_STATUSES.find((s) => s.key === status) || VEX_STATUSES[0];
+    const justification = "justification" in update ? update.justification : prev.justification;
+    const response = "response" in update ? update.response : prev.response;
+    const detail = "detail" in update ? update.detail : prev.detail;
+    const now = nowIso();
     const analysis = { state: spec.cdx };
     if (spec.key === "not_affected" && justification) analysis.justification = justification;
     if (response?.length) analysis.response = response;
     if (detail) analysis.detail = detail;
-    analysis.lastUpdated = nowIso();
-    return { ...v, analysis };
+    // first time a status other than "under investigation" is recorded (CERT-In: time taken by the supplier)
+    const firstIssued = prev.firstIssued || (spec.key !== "under_investigation" ? now : undefined);
+    if (firstIssued) analysis.firstIssued = firstIssued;
+    analysis.lastUpdated = now;
+    const out = { ...v, analysis };
+    const workaround = "workaround" in update ? update.workaround : v.workaround;
+    if (workaround) out.workaround = workaround;
+    else delete out.workaround;
+    let props = out.properties || [];
+    for (const [key, name] of [["restartRequired", RESTART_PROPERTY], ["remediationDate", REMEDIATION_DATE_PROPERTY]]) {
+      if (!(key in update)) continue;
+      props = props.filter((p) => p.name !== name);
+      if (update[key]) props.push({ name, value: String(update[key]) });
+    }
+    if (props.length) out.properties = props;
+    else delete out.properties;
+    return out;
   });
 }
 
@@ -195,11 +240,12 @@ export function cyclonedxVex(sbom, { author, now = nowIso() } = {}) {
     },
     vulnerabilities: (sbom?.vulnerabilities || []).map((raw) => {
       const v = withDefaultState(raw);
-      const keep = ["bom-ref", "id", "source", "references", "ratings", "cwes", "description", "recommendation", "advisories",
-        "published", "analysis"];
+      const keep = ["bom-ref", "id", "source", "references", "ratings", "cwes", "description", "recommendation", "workaround",
+        "advisories", "published", "analysis"];
       const out = Object.fromEntries(keep.filter((k) => v[k] !== undefined).map((k) => [k, v[k]]));
       out.affects = (v.affects || []).map((a) => ({ ref: link + a.ref }));
-      out.properties = [{ name: "cert-in:vex_status", value: statusOf(v).label }];
+      out.properties = [{ name: "cert-in:vex_status", value: statusOf(v).label },
+        ...(v.properties || []).filter((p) => [RESTART_PROPERTY, REMEDIATION_DATE_PROPERTY].includes(p.name))];
       return out;
     }),
   };
@@ -240,8 +286,9 @@ export function csafVex(sbom, { publisher = "Unknown publisher", namespace = "ht
       if (flag) entry.flags = [{ label: flag, product_ids: pids }];
       entry.threats = [{ category: "impact", details: v.analysis.detail || "Not affected per vendor analysis", product_ids: pids }];
     } else if (status.key === "affected") {
-      entry.remediations = [{ category: v.recommendation ? "vendor_fix" : "none_available",
-        details: v.recommendation || v.analysis.detail || "Remediation under development", product_ids: pids }];
+      entry.remediations = remediations(v, pids);
+    } else if (status.key === "fixed" && (v.recommendation || v.workaround)) {
+      entry.remediations = remediations(v, pids);
     }
     const r = (v.ratings || [])[0];
     if (r?.vector && String(r.vector).startsWith("CVSS:3") && typeof r.score === "number") {
@@ -266,6 +313,33 @@ export function csafVex(sbom, { publisher = "Unknown publisher", namespace = "ht
       branches: [{ category: "product_name", name: productName, branches }] }] },
     vulnerabilities,
   };
+}
+
+// CSAF remediations from the CycloneDX record: fix, workaround, no-fix decisions, restart and date
+function remediations(v, pids) {
+  const restart = getProp(v.properties, RESTART_PROPERTY);
+  const date = getProp(v.properties, REMEDIATION_DATE_PROPERTY);
+  const extra = {
+    ...(restart ? { restart_required: { category: restart } } : {}),
+    ...(date ? { date: /T/.test(date) ? date : `${date}T00:00:00Z` } : {}),
+  };
+  const responses = v.analysis?.response || [];
+  const out = [];
+  if (v.recommendation || responses.includes("update") || responses.includes("rollback")) {
+    out.push({ category: "vendor_fix", details: v.recommendation || "Update to a fixed version (see vendor advisory)",
+      product_ids: pids, ...extra });
+  }
+  if (v.workaround || responses.includes("workaround_available")) {
+    out.push({ category: "workaround", details: v.workaround || v.analysis?.detail || "Workaround available",
+      product_ids: pids, ...(restart ? { restart_required: { category: restart } } : {}) });
+  }
+  if (responses.includes("will_not_fix") || responses.includes("can_not_fix")) {
+    out.push({ category: "no_fix_planned", details: v.analysis?.detail || "No fix planned", product_ids: pids });
+  }
+  if (!out.length) {
+    out.push({ category: "none_available", details: v.analysis?.detail || "Remediation under development", product_ids: pids });
+  }
+  return out;
 }
 
 function uuid() {

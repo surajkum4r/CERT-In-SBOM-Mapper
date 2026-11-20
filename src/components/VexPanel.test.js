@@ -53,3 +53,18 @@ test("CSAF export needs a publisher and namespace", () => {
   fireEvent.click(csaf);
   expect(onExportCsaf).toHaveBeenCalledWith({ publisher: "Example Org", namespace: "https://example.in" });
 });
+
+test("remediation details: response, workaround, restart, date", () => {
+  render(<Harness />);
+  fireEvent.click(screen.getByLabelText("Remediation details for CVE-2021-44228"));
+  fireEvent.click(screen.getByLabelText("Workaround available"));
+  fireEvent.change(screen.getByLabelText("Workaround for CVE-2021-44228"), { target: { value: "Disable JNDI lookups" } });
+  fireEvent.change(screen.getByLabelText("Restart required for CVE-2021-44228"), { target: { value: "service" } });
+  fireEvent.change(screen.getByLabelText("Remediation date for CVE-2021-44228"), { target: { value: "2021-12-14" } });
+  expect(screen.getByLabelText("Workaround available")).toBeChecked();
+  expect(screen.getByLabelText("Workaround for CVE-2021-44228")).toHaveValue("Disable JNDI lookups");
+  expect(screen.getByLabelText("Restart required for CVE-2021-44228")).toHaveValue("service");
+  expect(screen.getByLabelText("Remediation date for CVE-2021-44228")).toHaveValue("2021-12-14");
+  // the status was not touched by these edits
+  expect(screen.getByLabelText("Status of CVE-2021-44228")).toHaveValue("under_investigation");
+});

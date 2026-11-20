@@ -143,3 +143,42 @@ describe("VEX (section 6)", () => {
     expect(lodash.cwe).toEqual({ id: "CWE-77", name: "CWE-77" });
   });
 });
+
+describe("VEX remediation details (section 6a)", () => {
+  test("response, workaround, restart and dates are recorded and other fields are kept", () => {
+    let v = setVulnerabilityAnalysis(SBOM.vulnerabilities, 0, { status: "affected", detail: "reachable via logging" });
+    const first = v[0].analysis.firstIssued;
+    expect(first).toBeTruthy();
+    v = setVulnerabilityAnalysis(v, 0, { response: ["update", "workaround_available"], workaround: "Set log4j2.formatMsgNoLookups=true",
+      restartRequired: "service", remediationDate: "2021-12-14" });
+    const rec = v[0];
+    expect(rec.analysis).toMatchObject({ state: "exploitable", detail: "reachable via logging", response: ["update", "workaround_available"] });
+    expect(rec.analysis.firstIssued).toBe(first); // not reset by later edits
+    expect(rec.workaround).toBe("Set log4j2.formatMsgNoLookups=true");
+    expect(prop(rec, "cert-in:restart_required")).toBe("service");
+    expect(prop(rec, "cert-in:remediation_date")).toBe("2021-12-14");
+    const cleared = setVulnerabilityAnalysis(v, 0, { workaround: "", restartRequired: "" });
+    expect(cleared[0].workaround).toBeUndefined();
+    expect(prop(cleared[0], "cert-in:restart_required")).toBeUndefined();
+    expect(prop(cleared[0], "cert-in:remediation_date")).toBe("2021-12-14");
+  });
+
+  test("CSAF remediations carry fix, workaround, restart and date; CycloneDX VEX keeps them too", () => {
+    let v = setVulnerabilityAnalysis(SBOM.vulnerabilities, 0, { status: "affected", response: ["update", "workaround_available"],
+      workaround: "Set log4j2.formatMsgNoLookups=true", restartRequired: "service", remediationDate: "2021-12-14" });
+    v = setVulnerabilityAnalysis(v, 1, { status: "affected", response: ["will_not_fix"], detail: "component is end of life" });
+    const csaf = csafVex({ ...SBOM, vulnerabilities: v }, { publisher: "Example Org", namespace: "https://example.in" });
+    expect(csaf.vulnerabilities[0].remediations).toEqual([
+      { category: "vendor_fix", details: "log4j-core 2.14.1: upgrade to 2.15.0", product_ids: ["CSAFPID-0002"],
+        restart_required: { category: "service" }, date: "2021-12-14T00:00:00Z" },
+      { category: "workaround", details: "Set log4j2.formatMsgNoLookups=true", product_ids: ["CSAFPID-0002"],
+        restart_required: { category: "service" } },
+    ]);
+    expect(csaf.vulnerabilities[1].remediations).toEqual([
+      { category: "no_fix_planned", details: "component is end of life", product_ids: ["CSAFPID-0003"] }]);
+    const vex = cyclonedxVex({ ...SBOM, vulnerabilities: v });
+    expect(vex.vulnerabilities[0].workaround).toBe("Set log4j2.formatMsgNoLookups=true");
+    expect(vex.vulnerabilities[0].properties.map((p) => p.name)).toEqual(
+      ["cert-in:vex_status", "cert-in:restart_required", "cert-in:remediation_date"]);
+  });
+});

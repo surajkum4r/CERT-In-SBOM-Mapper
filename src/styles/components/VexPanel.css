@@ -134,3 +134,50 @@
   text-decoration: underline dotted;
   cursor: help;
 }
+
+.vex-details td {
+  background: #fafafa;
+}
+
+.vex-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.vex-details-grid label,
+.vex-details-grid fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9em;
+}
+
+.vex-details-grid fieldset {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+
+.vex-details-grid fieldset label {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.vex-details-grid textarea {
+  width: 100%;
+  font: inherit;
+  padding: 4px;
+}
+
+.vex-dates {
+  font-size: 0.85em;
+  color: #555;
+}
+
+.vex-table .vex-details-grid input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+}
