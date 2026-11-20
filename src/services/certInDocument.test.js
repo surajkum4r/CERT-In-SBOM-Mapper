@@ -182,3 +182,45 @@ describe("VEX remediation details (section 6a)", () => {
       ["cert-in:vex_status", "cert-in:restart_required", "cert-in:remediation_date"]);
   });
 });
+
+describe("judgement fields and criticality basis (field 12)", () => {
+  const { mergeCertInProperties, CRITICALITY_BASIS_PROPERTY, CRITICALITY_MANUAL } = require("./certInDocumentService");
+  const KEYS = ["Patch Status", "Criticality", "Usage Restrictions", "Component Supplier", "Component Origin"];
+  const fetched = { "Patch Status": "Update available (>= 2.15.0)", "Criticality": "Critical", "Usage Restrictions": "Permissive",
+    "Component Supplier": "org.apache.logging.log4j", "Component Origin": "Open-source",
+    _criticalityBasis: "an actively exploited vulnerability (CISA KEV)" };
+  const get = (props, n) => props.find((p) => p.name === n)?.value;
+
+  test("values from the uploaded SBOM are kept; computed fields are refreshed", () => {
+    const props = mergeCertInProperties([{ name: "Criticality", value: "Low" }, { name: "Component Supplier", value: "Apache Software Foundation" },
+      { name: "Patch Status", value: "Up to date" }, { name: "Usage Restrictions", value: "NA" }], fetched, KEYS);
+    expect(get(props, "Criticality")).toBe("Low");
+    expect(get(props, CRITICALITY_BASIS_PROPERTY)).toBe("source SBOM");
+    expect(get(props, "Component Supplier")).toBe("Apache Software Foundation");
+    expect(get(props, "Usage Restrictions")).toBe("Permissive"); // NA is treated as empty
+    expect(get(props, "Patch Status")).toBe("Update available (>= 2.15.0)"); // computed: refreshed
+  });
+
+  test("a derived criticality is marked for review and refreshed; a manual one is kept", () => {
+    const first = mergeCertInProperties([{ name: "Criticality", value: "NA" }], fetched, KEYS);
+    expect(get(first, "Criticality")).toBe("Critical");
+    expect(get(first, CRITICALITY_BASIS_PROPERTY)).toMatch(/^derived from an actively exploited vulnerability .* review against/);
+    const refreshed = mergeCertInProperties(first, { ...fetched, Criticality: "High", _criticalityBasis: "the highest vulnerability severity" }, KEYS);
+    expect(get(refreshed, "Criticality")).toBe("High");
+    expect(get(refreshed, CRITICALITY_BASIS_PROPERTY)).toMatch(/^derived from the highest vulnerability severity/);
+    const manual = refreshed.map((p) => (p.name === "Criticality" ? { ...p, value: "Medium" }
+      : p.name === CRITICALITY_BASIS_PROPERTY ? { ...p, value: CRITICALITY_MANUAL } : p));
+    const again = mergeCertInProperties(manual, fetched, KEYS);
+    expect(get(again, "Criticality")).toBe("Medium");
+    expect(get(again, CRITICALITY_BASIS_PROPERTY)).toBe(CRITICALITY_MANUAL);
+  });
+
+  test("conformance counts derived criticality as still to review", () => {
+    const { sbomConformance } = require("../utils/conformance");
+    const comp = (basis) => ({ "bom-ref": basis, name: basis, properties: [{ name: "Criticality", value: "High" },
+      { name: CRITICALITY_BASIS_PROPERTY, value: basis }] });
+    const c = sbomConformance({ components: [comp("derived from x - review"), comp(CRITICALITY_MANUAL), comp("source SBOM")] });
+    expect(c.criticalityToReview).toBe(1);
+    expect(c.perComponent.map((p) => p.criticalityNeedsReview)).toEqual([true, false, false]);
+  });
+});

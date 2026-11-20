@@ -79,6 +79,12 @@ test("upload -> enrich -> VEX panel -> private and public export with CERT-In do
   expect(within(gapRow).getByText(/Component Dependencies/)).toBeInTheDocument();
   fireEvent.click(within(gapRow).getByText("Edit")); // opens that component in the editor
   expect(await screen.findByText("← Back")).toBeInTheDocument();
+  // the derived criticality is labelled for review; a manual choice replaces the basis
+  expect(screen.getByText(/Basis: derived from the highest vulnerability severity/)).toBeInTheDocument();
+  const criticality = screen.getAllByRole("combobox")
+    .find((s) => s.tagName === "SELECT" && Array.from(s.options).some((o) => o.value === "Critical"));
+  fireEvent.change(criticality, { target: { value: "Low" } });
+  expect(screen.getByText("Basis: manual - set by a reviewer")).toBeInTheDocument();
   fireEvent.click(screen.getByText("← Back"));
 
   // export dialog: author prefilled from metadata, choose the public distribution

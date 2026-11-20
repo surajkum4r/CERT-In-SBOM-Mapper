@@ -181,3 +181,7 @@
   width: auto;
   min-width: 0;
 }
+
+.conf-warn {
+  color: #b26a00;
+}

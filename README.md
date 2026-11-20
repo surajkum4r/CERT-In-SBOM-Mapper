@@ -106,7 +106,7 @@ Values follow the CERT-In Technical Guidelines v2.0 (09.07.2025), Table 5.
 | Vulnerabilities | Every finding is added to the exported SBOM's `vulnerabilities[]`, linked to the component (`affects`), with CVSS score, CWE, fix recommendation, CISA KEV status, EPSS exploit probability and a P0–P3 priority. Records for the same flaw from different databases (GHSA / PYSEC / Debian…) are merged under the CVE. |
 | Release Date | Release date of **this version** (npm `time[version]`, PyPI release files, deps.dev for Maven/Go/Cargo/NuGet). |
 | End-of-Life Date | endoflife.date, matched against its product list, with aliases (e.g. `log4j-core` → log4j, `spring-core` → spring-framework). Shows `Not announced` while a cycle is supported and `Ended (date not published)` when appropriate. Distro packages (deb/rpm/apk) are skipped: the distribution supports them. |
-| Criticality | `Critical` if a vulnerability is actively exploited (KEV) or the package is reported malicious; otherwise the highest of the SBOM's own ratings and the OSV severity. |
+| Criticality | Kept if the SBOM already has one. Otherwise `Critical` if a vulnerability is actively exploited (KEV) or the package is reported malicious, else the highest of the SBOM's own ratings and the OSV severity. The basis is recorded in `cert-in:criticality_basis` and derived values are marked for review. |
 | Component Supplier | The supplying **entity**: SBOM `supplier` / registry author, or the purl namespace (Maven groupId, npm scope, Go host org). |
 | Component Origin | From the licence: open-source licence → Open-source, proprietary terms → Proprietary. |
 | Usage Restrictions | Licence family analysis: permissive / weak copyleft (LGPL, MPL, EPL) / copyleft (GPL) / strong copyleft (AGPL) / restricted use (non-commercial, BUSL). Export control is marked as not assessed. |
@@ -148,7 +148,8 @@ The statuses are also kept in the SBOM's own `vulnerabilities[].analysis`.
 - NVD is not queried from the browser: it does not allow cross-origin requests, and an API key would be exposed in client-side code.
 - Hashes are only added where the registry exposes them to browsers (npm, PyPI). Maven Central and most OS package repositories do not allow cross-origin requests, so those components keep whatever hashes the uploaded SBOM had.
 - endoflife.date publishes product/platform EOL, not library EOL. Many libraries legitimately show `NA`.
-- Criticality is derived from vulnerability severity. CERT-In defines criticality as the component's importance to the application, so review and adjust it for business-critical components.
+- Criticality is derived from vulnerability severity when the SBOM has none. CERT-In defines criticality as the component's importance to the application, so every derived value is marked for review in `cert-in:criticality_basis`, and the conformance panel counts them. Setting Criticality in the editor marks it as reviewed.
+- Values a person decided (Criticality, Usage Restrictions, Component Supplier, Component Origin) are never overwritten by processing, whether they came from the uploaded SBOM or an edit. Computed fields (Patch Status, Release Date, EOL…) are refreshed.
 - GitHub calls are skipped if no token is set, to avoid 401/429 rate limits.
 - Background fetching is batched; large SBOMs can take time to complete.
 

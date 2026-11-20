@@ -9,7 +9,8 @@
 // completeness = share of fields with real values
 
 import { isValidPurl } from "./purl";
-import { LOOKUP_STATUS_PROPERTY, parseKnownUnknowns } from "../services/certInDocumentService";
+import { CRITICALITY_BASIS_PROPERTY, LOOKUP_STATUS_PROPERTY, isDerivedCriticality, parseKnownUnknowns }
+  from "../services/certInDocumentService";
 
 const NA_VALUES = new Set(["na", "n/a", "unknown", "noassertion", "not available"]);
 
@@ -106,6 +107,8 @@ export function sbomConformance(sbom) {
       ref: c["bom-ref"],
       name: `${c.name || "unnamed"}${c.version ? "@" + c.version : ""}`,
       lookupStatus: getProp(c, LOOKUP_STATUS_PROPERTY) || null,
+      // Criticality derived from vulnerability severity still needs a reviewer (field 12 = importance)
+      criticalityNeedsReview: fields.criticality === "present" && isDerivedCriticality(getProp(c, CRITICALITY_BASIS_PROPERTY)),
       reasons: parseKnownUnknowns(c),
       missing: TABLE5_FIELDS.filter((f) => fields[f.key] === "missing").map((f) => f.label),
       na: TABLE5_FIELDS.filter((f) => fields[f.key] === "na").map((f) => f.label),
@@ -122,5 +125,6 @@ export function sbomConformance(sbom) {
     conformancePct: pct(total - missing),
     completenessPct: pct(present),
     verdict: !components.length ? "No components" : missing === 0 ? "Conformant" : "Not conformant",
+    criticalityToReview: perComponent.filter((c) => c.criticalityNeedsReview).length,
   };
 }

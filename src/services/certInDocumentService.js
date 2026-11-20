@@ -112,6 +112,43 @@ export function applyComponentFields(component, fields, author) {
   return c;
 }
 
+// Fields that record a human judgement. Auto-derived values never overwrite a value that is already set
+// (from the uploaded SBOM or an earlier edit); computed fields such as Patch Status are refreshed.
+export const JUDGEMENT_PROPERTIES = ["Criticality", "Usage Restrictions", "Component Supplier", "Component Origin"];
+export const CRITICALITY_BASIS_PROPERTY = "cert-in:criticality_basis";
+export const CRITICALITY_MANUAL = "manual - set by a reviewer";
+export const CRITICALITY_SOURCE = "source SBOM";
+export const isDerivedCriticality = (basis) => String(basis || "").startsWith("derived");
+
+function upsert(props, name, value) {
+  const i = props.findIndex((p) => p.name === name);
+  if (i >= 0) props[i] = { name, value: String(value) };
+  else props.push({ name, value: String(value) });
+}
+
+export function mergeCertInProperties(existingProps, fetched, keys) {
+  const props = [...(existingProps || [])];
+  const basis = getProp(props, CRITICALITY_BASIS_PROPERTY);
+  const hadCriticality = !isEmpty(getProp(props, "Criticality"));
+  for (const key of keys) {
+    const val = fetched?.[key];
+    if (!val || val === "NA") continue;
+    if (JUDGEMENT_PROPERTIES.includes(key) && !isEmpty(getProp(props, key))) {
+      // a derived Criticality may be refreshed (new vulnerabilities); a source/manual one is kept
+      if (!(key === "Criticality" && isDerivedCriticality(basis))) continue;
+    }
+    upsert(props, key, val);
+  }
+  if (hadCriticality && !basis) {
+    upsert(props, CRITICALITY_BASIS_PROPERTY, CRITICALITY_SOURCE);
+  } else if ((!hadCriticality || isDerivedCriticality(basis)) && fetched?._criticalityBasis && !isEmpty(getProp(props, "Criticality"))) {
+    // CERT-In Table 5 field 12 defines criticality as importance to the application, not vulnerability severity
+    upsert(props, CRITICALITY_BASIS_PROPERTY,
+      `derived from ${fetched._criticalityBasis} - review against the component's importance to the application`);
+  }
+  return props;
+}
+
 // Known unknowns (Table 5 practice): record why fields are NA, or that the lookup itself failed.
 export const KNOWN_UNKNOWNS_PROPERTY = "cert-in:known_unknowns";
 export const LOOKUP_STATUS_PROPERTY = "cert-in:lookup_status";

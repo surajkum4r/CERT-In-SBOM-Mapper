@@ -119,6 +119,7 @@ class PropertyMapperService {
       },
     };
     props._knownUnknowns = this.explainUnknowns(props, component, pkgInfo, pkgData, vulnData, license);
+    props._criticalityBasis = this.criticalityBasis(props["Criticality"], vulnData, sbomVulnerabilities, component);
     return props;
   }
 
@@ -149,6 +150,14 @@ class PropertyMapperService {
     }
     if (!vulnData?.scanned) return "NA";
     return this.vuln.determineCriticality(vulnData);
+  }
+
+  criticalityBasis(value, vulnData, sbomVulns, component) {
+    if (!value || value === "NA") return null;
+    if (vulnData?.kevCount > 0) return "an actively exploited vulnerability (CISA KEV)";
+    if (vulnData?.malicious) return "a malicious-package report";
+    if (this.determineCriticalityFromSbom(sbomVulns, component) || vulnData?.totalVulns > 0) return "the highest vulnerability severity";
+    return "having no known vulnerabilities";
   }
 
   determineCriticalityFromSbom(sbomVulns, component) {

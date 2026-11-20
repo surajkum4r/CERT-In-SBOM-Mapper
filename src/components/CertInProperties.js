@@ -106,6 +106,11 @@ export function CertInProperties({ properties, onChange }) {
           <option>Medium</option>
           <option>Low</option>
         </select>
+        {getPropValue("cert-in:criticality_basis") && (
+          <small className={String(getPropValue("cert-in:criticality_basis")).startsWith("derived") ? "certin-basis review" : "certin-basis"}>
+            Basis: {getPropValue("cert-in:criticality_basis")}
+          </small>
+        )}
       </label>
 
       {["Executable Property", "Archive Property", "Structured Property"].map(

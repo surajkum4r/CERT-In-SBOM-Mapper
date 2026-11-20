@@ -99,6 +99,10 @@ class PDFExportService {
     this.heading("CERT-In Table 5 conformance");
     this.text(`${c.verdict}: ${c.conformancePct}% of fields supplied or declared NA; ${c.completenessPct}% carry real values `
       + `(${c.components} components x 21 fields).`, { gap: 2 });
+    if (c.criticalityToReview) {
+      this.text(`${c.criticalityToReview} component(s) have a Criticality derived from vulnerability severity and still need a `
+        + "review against their importance to the application (CERT-In Table 5, field 12).", { gap: 2 });
+    }
     this.table(
       [{ header: "Field", width: 70 }, { header: "Present", width: 30 }, { header: "Declared NA", width: 35 }, { header: "Missing", width: 30 }],
       c.fields.map((f) => [f.label, f.present, f.na, f.missing]),

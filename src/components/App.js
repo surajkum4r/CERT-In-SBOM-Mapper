@@ -19,7 +19,8 @@ import VexPanel from "./VexPanel";
 import ConformancePanel from "./ConformancePanel";
 import { sbomConformance } from "../utils/conformance";
 import {
-  AUTHOR_PROPERTY, PRACTICES, applyComponentFields, applyLookupOutcome, csafVex, cyclonedxVex, prepareForExport, sbomAuthor,
+  AUTHOR_PROPERTY, CRITICALITY_BASIS_PROPERTY, CRITICALITY_MANUAL, PRACTICES, applyComponentFields, applyLookupOutcome,
+  mergeCertInProperties, csafVex, cyclonedxVex, prepareForExport, sbomAuthor,
   setVulnerabilityAnalysis,
 } from "../services/certInDocumentService";
 
@@ -321,21 +322,9 @@ export default function App() {
               // Optimized property merging - much faster
               const merged = updatedComponents.map((c, idx) => {
                 const fetched = results[idx] || {};
-                const existingProps = Array.isArray(c.properties) ? c.properties : [];
-                const newProps = [...existingProps];
-                
-                // Fast property update without function calls
-                CERT_IN_PROPERTIES.forEach(({ key }) => {
-                  const val = fetched[key];
-                  if (val && val !== "NA") {
-                    const existingIdx = newProps.findIndex(p => p.name === key);
-                    if (existingIdx >= 0) {
-                      newProps[existingIdx] = { name: key, value: String(val) };
-                    } else {
-                      newProps.push({ name: key, value: String(val) });
-                    }
-                  }
-                });
+                // computed fields are refreshed; judgement fields (Criticality, Usage Restrictions, Supplier,
+                // Origin) keep a value that is already set, and Criticality records its basis
+                const newProps = mergeCertInProperties(c.properties, fetched, CERT_IN_PROPERTIES.map((p) => p.key));
                 
                 // description / licence / hashes into native fields where missing, plus Author of SBOM Data
                 const withFields = applyComponentFields({ ...c, properties: newProps }, fetched._componentFields, sbomAuthor(json));
@@ -443,7 +432,11 @@ export default function App() {
 
   const updatePropertyField = (name, value) => {
     setEditComponent((prev) => {
-      const updatedProps = updateProperty(prev.properties, name, value);
+      let updatedProps = updateProperty(prev.properties, name, value);
+      // a reviewer's choice replaces the derived criticality and is kept on re-processing
+      if (name === "Criticality") {
+        updatedProps = updateProperty(updatedProps, CRITICALITY_BASIS_PROPERTY, value.trim() ? CRITICALITY_MANUAL : "");
+      }
       return { ...prev, properties: updatedProps };
     });
   };

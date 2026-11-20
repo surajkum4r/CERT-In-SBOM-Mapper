@@ -6,7 +6,7 @@ import { sbomConformance } from "../utils/conformance";
 export default function ConformancePanel({ sbom, onOpenComponent, onBack }) {
   const [onlyGaps, setOnlyGaps] = useState(true);
   const result = useMemo(() => sbomConformance(sbom), [sbom]);
-  const rows = onlyGaps ? result.perComponent.filter((c) => c.missing.length) : result.perComponent;
+  const rows = onlyGaps ? result.perComponent.filter((c) => c.missing.length || c.criticalityNeedsReview) : result.perComponent;
 
   return (
     <div className="vex-panel">
@@ -20,6 +20,13 @@ export default function ConformancePanel({ sbom, onOpenComponent, onBack }) {
         {" "}{result.completenessPct}% carry real values ({result.components} components × 21 fields).
         A field declared <em>NA</em> counts as a CERT-In "known unknown"; a <em>missing</em> field does not.
       </p>
+      {result.criticalityToReview > 0 && (
+        <p className="vex-intro conf-warn">
+          {result.criticalityToReview} component(s) have a Criticality derived from vulnerability severity. CERT-In defines
+          criticality as the component's importance to the application: review these in the editor (the value is then kept
+          on re-processing).
+        </p>
+      )}
 
       <div className="vex-table-wrap">
         <table className="vex-table">
@@ -38,7 +45,7 @@ export default function ConformancePanel({ sbom, onOpenComponent, onBack }) {
 
       <div className="vex-summary">
         <button className={onlyGaps ? "vex-chip active" : "vex-chip"} onClick={() => setOnlyGaps(true)}>
-          Components with missing fields ({result.perComponent.filter((c) => c.missing.length).length})
+          Components to fix or review ({result.perComponent.filter((c) => c.missing.length || c.criticalityNeedsReview).length})
         </button>
         <button className={!onlyGaps ? "vex-chip active" : "vex-chip"} onClick={() => setOnlyGaps(false)}>
           All components ({result.perComponent.length})
@@ -62,7 +69,10 @@ export default function ConformancePanel({ sbom, onOpenComponent, onBack }) {
                       <div className="conf-bad" title={c.lookupStatus}>Automatic lookup failed - NA fields not collected</div>
                     )}
                   </td>
-                  <td>{c.missing.join(", ") || "-"}</td>
+                  <td>
+                    {c.missing.join(", ") || "-"}
+                    {c.criticalityNeedsReview && <div className="conf-warn">Criticality to review</div>}
+                  </td>
                   <td>
                     {c.na.length ? c.na.map((label, i) => {
                       const reason = c.reasons[label] || c.reasons[label.replace(" (EOL)", "")]
