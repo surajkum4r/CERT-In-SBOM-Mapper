@@ -14,6 +14,32 @@ import ProgressBar from "./ProgressBar";
 import Notification from "./Notification";
 import errorService from "../services/errorService";
 import cacheService from "../services/cacheService";
+import { ensureBomRefs, mergeVulnerabilities } from "../utils/sbomVulnerabilities";
+import VexPanel from "./VexPanel";
+import ConformancePanel from "./ConformancePanel";
+import { sbomConformance } from "../utils/conformance";
+import {
+  AUTHOR_PROPERTY, CRITICALITY_BASIS_PROPERTY, CRITICALITY_MANUAL, PRACTICES, applyComponentFields, applyLookupOutcome,
+  mergeCertInProperties, csafVex, cyclonedxVex, prepareForExport, sbomAuthor,
+  setVulnerabilityAnalysis,
+} from "../services/certInDocumentService";
+
+// Per-viewer convenience only (author name, practices text); the app works without it.
+const PREFS_KEY = "cert-in-mapper-export-prefs";
+function loadPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+function savePrefs(prefs) {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // storage unavailable (private mode / blocked) - nothing to do
+  }
+}
 
 const CERT_IN_PROPERTIES = [
   { key: "Patch Status", label: "Patch Status" },
@@ -28,6 +54,7 @@ const CERT_IN_PROPERTIES = [
   { key: "Unique Identifier", label: "Unique Identifier" },
   { key: "Component Supplier", label: "Component Supplier" },
   { key: "Component Origin", label: "Component Origin" },
+  { key: AUTHOR_PROPERTY, label: "Author of SBOM Data" },
 ];
 
 function updateProperty(properties, name, value) {
@@ -71,6 +98,12 @@ export default function App() {
   const [dialogResetKey, setDialogResetKey] = useState(0);
   const [nameFilter, setNameFilter] = useState('');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [showVexPanel, setShowVexPanel] = useState(false);
+  const [showConformance, setShowConformance] = useState(false);
+  const [exportAuthor, setExportAuthor] = useState(() => loadPrefs().author || "");
+  const [exportPractices, setExportPractices] = useState(() => loadPrefs().practices || {});
+  const [exportDistribution, setExportDistribution] = useState("private");
+  const [showPractices, setShowPractices] = useState(false);
 
   // Filter components by name
   const filteredComponents = components.filter(component => {
@@ -195,7 +228,7 @@ export default function App() {
       try {
         const json = JSON.parse(evt.target.result);
         if (json.components) {
-          const updatedComponents = json.components.map((component) => {
+          const updatedComponents = ensureBomRefs(json.components).map((component) => {
             let props = component.properties ? [...component.properties] : [];
             CERT_IN_PROPERTIES.forEach(({ key }) => {
               if (!props.find((p) => p.name === key)) {
@@ -248,8 +281,11 @@ export default function App() {
                 setFetchLabel('Loading cached results...');
                 
                 const cachedResult = cacheService.getFileResult(json);
-                setComponents(cachedResult);
-                setSbom((prev) => ({ ...(prev || {}), components: cachedResult }));
+                const cachedComponents = Array.isArray(cachedResult) ? cachedResult : cachedResult.components;
+                const cachedVulns = Array.isArray(cachedResult) ? (json.vulnerabilities || []) : cachedResult.vulnerabilities;
+                setComponents(cachedComponents);
+                setVulnerabilities(cachedVulns);
+                setSbom((prev) => ({ ...(prev || {}), components: cachedComponents, vulnerabilities: cachedVulns }));
                 
                 setFetchProgress(100);
                 
@@ -286,29 +322,27 @@ export default function App() {
               // Optimized property merging - much faster
               const merged = updatedComponents.map((c, idx) => {
                 const fetched = results[idx] || {};
-                const existingProps = Array.isArray(c.properties) ? c.properties : [];
-                const newProps = [...existingProps];
+                // computed fields are refreshed; judgement fields (Criticality, Usage Restrictions, Supplier,
+                // Origin) keep a value that is already set, and Criticality records its basis
+                const newProps = mergeCertInProperties(c.properties, fetched, CERT_IN_PROPERTIES.map((p) => p.key));
                 
-                // Fast property update without function calls
-                CERT_IN_PROPERTIES.forEach(({ key }) => {
-                  const val = fetched[key];
-                  if (val && val !== "NA") {
-                    const existingIdx = newProps.findIndex(p => p.name === key);
-                    if (existingIdx >= 0) {
-                      newProps[existingIdx] = { name: key, value: String(val) };
-                    } else {
-                      newProps.push({ name: key, value: String(val) });
-                    }
-                  }
-                });
-                
-                return { ...c, properties: newProps };
+                // description / licence / hashes into native fields where missing, plus Author of SBOM Data
+                const withFields = applyComponentFields({ ...c, properties: newProps }, fetched._componentFields, sbomAuthor(json));
+                // known unknowns: why fields are NA, or that the lookup failed (then NA means "not collected")
+                const gotResult = Object.prototype.hasOwnProperty.call(fetched, "Patch Status");
+                return applyLookupOutcome(withFields, gotResult
+                  ? { knownUnknowns: fetched._knownUnknowns, lookupFailed: fetched._lookupFailed }
+                  : { lookupFailed: "no result returned" });
               });
+              // Vulnerabilities found via OSV go into the SBOM's vulnerabilities[] (CERT-In field 8),
+              // merged with those the uploaded SBOM already had.
+              const mergedVulns = mergeVulnerabilities(json.vulnerabilities || [], merged, results);
               setComponents(merged);
-              setSbom((prev) => ({ ...(prev || {}), components: merged }));
+              setVulnerabilities(mergedVulns);
+              setSbom((prev) => ({ ...(prev || {}), components: merged, vulnerabilities: mergedVulns }));
               
               // Cache the entire processing result for future use
-              cacheService.setFileResult(json, merged);
+              cacheService.setFileResult(json, { components: merged, vulnerabilities: mergedVulns });
               if (process.env.NODE_ENV === 'development') {
                 console.log('[FILE_CHECKSUM] Cached entire SBOM processing result');
               }
@@ -398,7 +432,11 @@ export default function App() {
 
   const updatePropertyField = (name, value) => {
     setEditComponent((prev) => {
-      const updatedProps = updateProperty(prev.properties, name, value);
+      let updatedProps = updateProperty(prev.properties, name, value);
+      // a reviewer's choice replaces the derived criticality and is kept on re-processing
+      if (name === "Criticality") {
+        updatedProps = updateProperty(updatedProps, CRITICALITY_BASIS_PROPERTY, value.trim() ? CRITICALITY_MANUAL : "");
+      }
       return { ...prev, properties: updatedProps };
     });
   };
@@ -416,6 +454,7 @@ export default function App() {
     if (!sbom) return;
     // Force dialog reset by incrementing key
     setDialogResetKey(prev => prev + 1);
+    setExportAuthor((prev) => prev || sbomAuthor(sbom));
     setShowExportDialog(true);
   };
 
@@ -424,6 +463,7 @@ export default function App() {
     if (showExportDialog) {
       // Reset to default state - as if opening for the first time
       setExportWithSignature(false);
+      setExportDistribution("private");
       setExportKeyOption('generate');
       setExportPrivateKeyFile(null);
       setExportPublicKeyFile(null);
@@ -452,6 +492,14 @@ export default function App() {
     }
   }, [exportWithSignature, exportKeyOption]);
 
+  // CERT-In document details applied at export time: Timestamp (assembly time), Author of SBOM
+  // Data, Practices and Processes declaration, and the public/private distribution (5.3.2).
+  const buildExportDocument = () => {
+    savePrefs({ author: exportAuthor, practices: exportPractices });
+    return prepareForExport(sbom, { author: exportAuthor.trim(), practices: exportPractices, distribution: exportDistribution });
+  };
+  const exportFileName = () => (exportDistribution === "public" ? "cyclonedx-sbom-public.json" : "cyclonedx-sbom-updated.json");
+
   const handleExportWithSignature = async () => {
     if (!sbom) return;
     
@@ -460,9 +508,10 @@ export default function App() {
       const signatureService = new StandaloneSignatureService();
       
       // Generate or upload keys based on selected option
+      let generatedKeys = null;
       if (exportKeyOption === 'generate') {
         // Always generate new keys when "Generate new key pair" is selected
-        await signatureService.generateAndSaveKeys();
+        generatedKeys = await signatureService.generateAndSaveKeys();
         showNotification("Generated new key pair for signing", 'success');
       } else if (exportKeyOption === 'upload') {
         // Check if files are selected for inline upload
@@ -478,8 +527,8 @@ export default function App() {
         return;
       }
       
-      // Sign the SBOM
-      const result = await signatureService.signSBOM(sbom, 'cyclonedx-sbom-updated.json');
+      // Sign the SBOM (the document actually exported, with CERT-In details applied)
+      const result = await signatureService.signSBOM(buildExportDocument(), exportFileName());
       
       // Store signature file content for potential verification
       sessionStorage.setItem('sbom_signature_file', JSON.stringify(result.signatureFile.content));
@@ -487,14 +536,23 @@ export default function App() {
       // Export the original SBOM (unchanged)
       const dataStr = JSON.stringify(result.sbom, null, 2);
       const blob = new Blob([dataStr], { type: "application/json" });
-      saveAs(blob, "cyclonedx-sbom-updated.json");
+      saveAs(blob, exportFileName());
       
       // Export the signature file
       const signatureStr = JSON.stringify(result.signatureFile.content, null, 2);
       const signatureBlob = new Blob([signatureStr], { type: "application/json" });
       saveAs(signatureBlob, result.signatureFile.filename);
-      
-      showNotification("SBOM exported with signature successfully!", 'success');
+
+      // A generated key pair must leave the browser: without the public key nobody can verify the
+      // signature (CERT-In 5.4), and without the private key the same identity cannot sign again.
+      if (generatedKeys) {
+        saveAs(new Blob([generatedKeys.publicKey], { type: "application/x-pem-file" }), "sbom-signing-public.pem");
+        saveAs(new Blob([generatedKeys.privateKey], { type: "application/x-pem-file" }), "sbom-signing-private.pem");
+        showNotification("SBOM signed. Share sbom-signing-public.pem with recipients so they can verify it; keep "
+          + "sbom-signing-private.pem secret and re-use it via \"Upload your own keys\" for future exports.", 'success', 12000);
+      } else {
+        showNotification("SBOM exported with signature successfully!", 'success');
+      }
       setShowExportDialog(false);
     } catch (error) {
       showNotification("Failed to export with signature: " + error.message, 'error');
@@ -506,11 +564,12 @@ export default function App() {
   const handleExportWithoutSignature = () => {
     if (!sbom) return;
     
-    const dataStr = JSON.stringify(sbom, null, 2);
+    const dataStr = JSON.stringify(buildExportDocument(), null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
-    saveAs(blob, "cyclonedx-sbom-updated.json");
+    saveAs(blob, exportFileName());
     
-    showNotification("SBOM exported successfully!", 'success');
+    showNotification(exportDistribution === "public"
+      ? "Public SBOM exported (vulnerability data removed)." : "SBOM exported successfully!", 'success');
     setShowExportDialog(false);
   };
 
@@ -670,11 +729,14 @@ export default function App() {
       const docControlSheet = workbook.addWorksheet('Document Control');
       docControlSheet.addRow(['Report Name', '<OrgName-ClientName-ProductName-#-DD-MM-YYYY>']);
       docControlSheet.addRow(['Report Version', '<X.X>']);
-      docControlSheet.addRow(['Product Name', '<Product Name>']);
-      docControlSheet.addRow(['Product Version', '<X.X.X>']);
-      docControlSheet.addRow(['Product Description', '<Short description about project>']);
-      docControlSheet.addRow(['Timestamp', '<Add the value from metadata from json file>']);
-      docControlSheet.addRow(['Author', 'Suraj Kumar']);
+      const rootComponent = sbom?.metadata?.component || {};
+      docControlSheet.addRow(['Product Name', rootComponent.name || '<Product Name>']);
+      docControlSheet.addRow(['Product Version', rootComponent.version || '<X.X.X>']);
+      docControlSheet.addRow(['Product Description', rootComponent.description || '<Short description about project>']);
+      docControlSheet.addRow(['Timestamp', new Date().toISOString()]);
+      docControlSheet.addRow(['SBOM Generated', sbom?.metadata?.timestamp || 'NA']);
+      docControlSheet.addRow(['Author of SBOM Data', exportAuthor.trim() || sbomAuthor(sbom) || 'NA']);
+      docControlSheet.addRow(['Guideline', 'CERT-In Technical Guidelines v2.0 (09.07.2025)']);
 
       // Components Sheet
       const componentsSheet = workbook.addWorksheet('Components');
@@ -729,6 +791,24 @@ export default function App() {
       componentsSheet.columns.forEach(column => {
         column.width = 15;
       });
+
+      // CERT-In Table 5 conformance sheet
+      const conformance = sbomConformance({ ...sbom, components, vulnerabilities });
+      const confSheet = workbook.addWorksheet('CERT-In Conformance');
+      confSheet.addRow(['Verdict', conformance.verdict]);
+      confSheet.addRow(['Fields supplied or declared NA', `${conformance.conformancePct}%`]);
+      confSheet.addRow(['Fields with real values', `${conformance.completenessPct}%`]);
+      confSheet.addRow([]);
+      const confHeader = confSheet.addRow(['Field', 'Present', 'Declared NA', 'Missing']);
+      confHeader.font = { bold: true };
+      conformance.fields.forEach((f) => confSheet.addRow([f.label, f.present, f.na, f.missing]));
+      confSheet.addRow([]);
+      const gapHeader = confSheet.addRow(['Component', 'Missing fields', 'Declared NA']);
+      gapHeader.font = { bold: true };
+      conformance.perComponent.forEach((c) => confSheet.addRow([c.name, c.missing.join(', '), c.na.join(', ')]));
+      confSheet.getColumn(1).width = 40;
+      confSheet.getColumn(2).width = 60;
+      confSheet.getColumn(3).width = 40;
 
       // Generate Excel file
       const buffer = await workbook.xlsx.writeBuffer();
@@ -807,6 +887,23 @@ export default function App() {
       });
     });
     return map;
+  };
+
+  // CERT-In section 6: VEX status per vulnerability
+  const updateVexStatus = (index, analysis) => {
+    const next = setVulnerabilityAnalysis(vulnerabilities, index, analysis);
+    setVulnerabilities(next);
+    setSbom((prev) => (prev ? { ...prev, vulnerabilities: next } : prev));
+  };
+  const exportVex = () => {
+    const doc = cyclonedxVex({ ...sbom, vulnerabilities }, { author: exportAuthor.trim() || sbomAuthor(sbom) });
+    saveAs(new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }), "cyclonedx-vex.json");
+    showNotification("CycloneDX VEX exported.", 'success');
+  };
+  const exportCsaf = ({ publisher, namespace }) => {
+    const doc = csafVex({ ...sbom, vulnerabilities }, { publisher: publisher.trim(), namespace: namespace.trim() });
+    saveAs(new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }), "csaf-vex.json");
+    showNotification("CSAF 2.0 advisory exported.", 'success');
   };
 
   const goBack = () => {
@@ -1027,7 +1124,7 @@ export default function App() {
           {fetchProgress !== null && (
             <ProgressBar progress={fetchProgress} label={fetchLabel} />
           )}
-          {!editComponent && components.length > 0 && !showSignatureManager && (
+          {!editComponent && components.length > 0 && !showSignatureManager && !showVexPanel && !showConformance && (
             <>
               <h2 className={`main-heading ${isNewUpload ? 'heading-fresh' : ''}`}>
                 Components <span className="component-count">({filteredComponents.length} {nameFilter ? 'filtered' : 'loaded'})</span>
@@ -1171,8 +1268,51 @@ export default function App() {
           )}
 
 
-          {sbom && !editComponent && !showSignatureManager && !showDuplicateDetector && (
+          {/* Vulnerability status (VEX) - CERT-In section 6 */}
+          {!editComponent && showVexPanel && (
+            <VexPanel
+              vulnerabilities={vulnerabilities}
+              components={components}
+              onChange={updateVexStatus}
+              onExportVex={exportVex}
+              onExportCsaf={exportCsaf}
+              onBack={() => setShowVexPanel(false)}
+            />
+          )}
+
+          {/* CERT-In Table 5 conformance */}
+          {!editComponent && showConformance && (
+            <ConformancePanel
+              sbom={{ ...sbom, components, vulnerabilities }}
+              onOpenComponent={(ref) => {
+                const idx = components.findIndex((c) => c["bom-ref"] === ref);
+                if (idx >= 0) {
+                  setShowConformance(false);
+                  selectComponent(idx);
+                }
+              }}
+              onBack={() => setShowConformance(false)}
+            />
+          )}
+
+          {sbom && !editComponent && !showSignatureManager && !showDuplicateDetector && !showVexPanel && !showConformance && (
             <div className="export-actions">
+              <button
+                onClick={() => setShowConformance(true)}
+                className="export-button teal"
+                title="Check which of the 21 CERT-In Table 5 fields are present, declared NA or missing"
+                disabled={fetchProgress !== null}
+              >
+                CERT-In Conformance ({sbomConformance({ ...sbom, components, vulnerabilities }).conformancePct}%)
+              </button>
+              <button
+                onClick={() => setShowVexPanel(true)}
+                className="export-button red"
+                title="Set the CERT-In VEX status of each vulnerability and export CycloneDX VEX / CSAF"
+                disabled={fetchProgress !== null}
+              >
+                Vulnerability Status (VEX){vulnerabilities.length ? ` (${vulnerabilities.length})` : ""}
+              </button>
               <button
                 onClick={exportSbom}
                 className="export-button green"
@@ -1260,6 +1400,47 @@ export default function App() {
               </div>
             </div>
             
+            <div className="certin-export-details">
+              <p><strong>CERT-In document details</strong></p>
+              <label className="certin-export-field">
+                Author of SBOM data (person / organisation)
+                <input
+                  type="text"
+                  value={exportAuthor}
+                  onChange={(e) => setExportAuthor(e.target.value)}
+                  placeholder="e.g. Example Org Pvt Ltd - Product Security"
+                />
+              </label>
+              <div className="certin-export-field">
+                Distribution (CERT-In 5.3.2)
+                <label>
+                  <input type="radio" name="distribution" checked={exportDistribution === "private"}
+                    onChange={() => setExportDistribution("private")} />
+                  {" "}Private - full SBOM including vulnerabilities
+                </label>
+                <label>
+                  <input type="radio" name="distribution" checked={exportDistribution === "public"}
+                    onChange={() => setExportDistribution("public")} />
+                  {" "}Public - vulnerability data, patch status and notes removed
+                </label>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowPractices((s) => !s)}>
+                {showPractices ? "Hide" : "Declare"} Practices and Processes ({PRACTICES.filter((x) => String(exportPractices[x.key] || "").trim()).length}/{PRACTICES.length})
+              </button>
+              {showPractices && PRACTICES.map((pr) => (
+                <label key={pr.key} className="certin-export-field">
+                  {pr.label}
+                  <textarea
+                    rows={2}
+                    value={exportPractices[pr.key] || ""}
+                    placeholder={pr.hint}
+                    onChange={(e) => setExportPractices((prev) => ({ ...prev, [pr.key]: e.target.value }))}
+                  />
+                </label>
+              ))}
+              <small>The export timestamp is recorded as the SBOM assembly time; the original is kept as cert-in:source_timestamp.</small>
+            </div>
+
             {exportWithSignature && (
               <div className="signature-options">
                 <p><strong>Key Options:</strong></p>
@@ -1275,7 +1456,7 @@ export default function App() {
                         clearAllFileStates();
                       }}
                     />
-                    <span>Generate new key pair</span>
+                    <span>Generate new key pair <small>(the public and private key files are saved with the SBOM)</small></span>
                   </label>
                 </div>
                 <div className="key-option">

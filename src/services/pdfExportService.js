@@ -1,233 +1,222 @@
-import jsPDF from 'jspdf';
+import jsPDF from "jspdf";
+import { GUIDELINE, PRACTICES, sbomAuthor, sbomTools, statusOf } from "./certInDocumentService";
+import { getProp, sbomConformance, uncheckedComponents } from "../utils/conformance";
+
+// CERT-In properties are stored as CycloneDX component properties ({name, value}),
+// not as fields on the component object.
+const PROPERTY_ROWS = [
+  "Patch Status", "Release Date", "End-of-Life Date", "Criticality", "Usage Restrictions", "Component Supplier",
+  "Component Origin", "Executable Property", "Archive Property", "Structured Property", "Unique Identifier",
+  "Author of SBOM Data", "Comments or Notes",
+];
+const SEVERITIES = ["critical", "high", "medium", "low"];
 
 class PDFExportService {
   constructor() {
     this.doc = null;
-    this.pageHeight = 0;
-    this.margin = 20;
-    this.currentY = 0;
-    this.lineHeight = 6;
+    this.margin = 15;
+    this.lineHeight = 5;
   }
 
   initializeDocument() {
-    this.doc = new jsPDF('p', 'mm', 'a4');
-    this.pageHeight = this.doc.internal.pageSize.height;
+    this.doc = new jsPDF("p", "mm", "a4");
+    this.pageHeight = this.doc.internal.pageSize.getHeight();
+    this.pageWidth = this.doc.internal.pageSize.getWidth();
+    this.textWidth = this.pageWidth - 2 * this.margin;
     this.currentY = this.margin;
   }
 
-  addHeader(title, subtitle = '') {
-    // Title
-    this.doc.setFontSize(20);
-    this.doc.setFont('helvetica', 'bold');
-    this.doc.text(title, this.margin, this.currentY);
-    this.currentY += 10;
-
-    // Subtitle
-    if (subtitle) {
-      this.doc.setFontSize(12);
-      this.doc.setFont('helvetica', 'normal');
-      this.doc.text(subtitle, this.margin, this.currentY);
-      this.currentY += 8;
-    }
-
-    // Date
-    const currentDate = new Date().toLocaleDateString();
-    this.doc.setFontSize(10);
-    this.doc.text(`Generated on: ${currentDate}`, this.margin, this.currentY);
-    this.currentY += 15;
-  }
-
-  addSection(title, content) {
-    // Check if we need a new page
-    if (this.currentY > this.pageHeight - 40) {
+  ensureSpace(height) {
+    if (this.currentY + height > this.pageHeight - 15) {
       this.doc.addPage();
       this.currentY = this.margin;
     }
+  }
 
-    // Section title
-    this.doc.setFontSize(14);
-    this.doc.setFont('helvetica', 'bold');
-    this.doc.text(title, this.margin, this.currentY);
-    this.currentY += 8;
+  text(content, { size = 10, style = "normal", indent = 0, gap = 0 } = {}) {
+    this.doc.setFontSize(size);
+    this.doc.setFont("helvetica", style);
+    const lines = this.doc.splitTextToSize(String(content ?? ""), this.textWidth - indent);
+    for (const line of lines) {
+      this.ensureSpace(this.lineHeight);
+      this.doc.text(line, this.margin + indent, this.currentY);
+      this.currentY += size >= 12 ? this.lineHeight + 1.5 : this.lineHeight;
+    }
+    this.currentY += gap;
+  }
 
-    // Section content
-    this.doc.setFontSize(10);
-    this.doc.setFont('helvetica', 'normal');
-    
-    if (typeof content === 'string') {
-      const lines = this.doc.splitTextToSize(content, 170);
-      this.doc.text(lines, this.margin, this.currentY);
-      this.currentY += lines.length * this.lineHeight + 5;
-    } else if (Array.isArray(content)) {
-      content.forEach(item => {
-        if (this.currentY > this.pageHeight - 20) {
-          this.doc.addPage();
-          this.currentY = this.margin;
-        }
-        this.doc.text(`• ${item}`, this.margin + 5, this.currentY);
-        this.currentY += this.lineHeight;
+  heading(title) {
+    this.ensureSpace(14);
+    this.currentY += 3;
+    this.text(title, { size: 13, style: "bold", gap: 1 });
+  }
+
+  bullets(items) {
+    for (const item of items) this.text(`• ${item}`, { indent: 3 });
+    this.currentY += 2;
+  }
+
+  // simple table: columns = [{ header, width }], widths in mm must sum to <= textWidth
+  table(columns, rows) {
+    const rowHeight = (cells) => Math.max(...cells.map((c, i) =>
+      this.doc.splitTextToSize(String(c ?? ""), columns[i].width - 1.5).length)) * 4.2 + 1.5;
+    const drawRow = (cells, bold) => {
+      this.doc.setFontSize(8.5);
+      this.doc.setFont("helvetica", bold ? "bold" : "normal");
+      const h = rowHeight(cells);
+      this.ensureSpace(h);
+      let x = this.margin;
+      cells.forEach((c, i) => {
+        this.doc.text(this.doc.splitTextToSize(String(c ?? ""), columns[i].width - 1.5), x, this.currentY);
+        x += columns[i].width;
       });
-      this.currentY += 5;
+      this.currentY += h;
+    };
+    drawRow(columns.map((c) => c.header), true);
+    for (const r of rows) drawRow(r, false);
+    this.currentY += 3;
+  }
+
+  addDocumentInfo(sbom) {
+    this.heading("Document information");
+    const practicesDeclared = PRACTICES.filter((p) => getProp(sbom.metadata || {}, `cert-in:practice:${p.key}`));
+    this.bullets([
+      `Guideline: ${GUIDELINE}`,
+      `Format: ${sbom.bomFormat || "CycloneDX"} ${sbom.specVersion || ""}`.trim(),
+      `Serial number: ${sbom.serialNumber || "NA"} (version ${sbom.version || 1})`,
+      `Product: ${[sbom.metadata?.component?.name, sbom.metadata?.component?.version].filter(Boolean).join(" ") || "NA"}`,
+      `Author of SBOM data: ${sbomAuthor(sbom) || "NA"}`,
+      `SBOM timestamp: ${sbom.metadata?.timestamp || "NA"}`,
+      `Generated by: ${sbomTools(sbom).join(", ") || "NA"}`,
+      `Distribution: ${getProp(sbom.metadata || {}, "cert-in:distribution") || "not declared"}`,
+      `Practices and Processes declared: ${practicesDeclared.length}/${PRACTICES.length}`
+        + (practicesDeclared.length ? ` (${practicesDeclared.map((p) => p.label).join(", ")})` : ""),
+    ]);
+  }
+
+  addConformance(sbom) {
+    const c = sbomConformance(sbom);
+    this.heading("CERT-In Table 5 conformance");
+    this.text(`${c.verdict}: ${c.conformancePct}% of fields supplied or declared NA; ${c.completenessPct}% carry real values `
+      + `(${c.components} components x 21 fields).`, { gap: 2 });
+    if (c.criticalityToReview) {
+      this.text(`${c.criticalityToReview} component(s) have a Criticality derived from vulnerability severity and still need a `
+        + "review against their importance to the application (CERT-In Table 5, field 12).", { gap: 2 });
+    }
+    this.table(
+      [{ header: "Field", width: 70 }, { header: "Present", width: 30 }, { header: "Declared NA", width: 35 }, { header: "Missing", width: 30 }],
+      c.fields.map((f) => [f.label, f.present, f.na, f.missing]),
+    );
+    const gaps = c.perComponent.filter((p) => p.missing.length);
+    if (gaps.length) {
+      this.text(`Components with missing fields (${gaps.length}):`, { style: "bold" });
+      this.bullets(gaps.slice(0, 40).map((g) => `${g.name}: ${g.missing.join(", ")}`));
+      if (gaps.length > 40) this.text(`... and ${gaps.length - 40} more`, { indent: 3 });
     }
   }
 
-  addTable(headers, data, title = '') {
-    // Check if we need a new page
-    if (this.currentY > this.pageHeight - 60) {
-      this.doc.addPage();
-      this.currentY = this.margin;
+  addVulnerabilities(sbom) {
+    const vulns = sbom.vulnerabilities || [];
+    this.heading("Vulnerabilities");
+    const unchecked = uncheckedComponents(sbom);
+    if (unchecked.length) {
+      this.text(`${unchecked.length} component(s) could not be checked for vulnerabilities (absence of findings is unknown):`,
+        { style: "bold" });
+      this.bullets(unchecked.slice(0, 30).map((u) => `${u.name}: ${u.reason}`));
     }
-
-    if (title) {
-      this.doc.setFontSize(12);
-      this.doc.setFont('helvetica', 'bold');
-      this.doc.text(title, this.margin, this.currentY);
-      this.currentY += 8;
+    if (!vulns.length) {
+      this.text("No vulnerabilities recorded in this SBOM.", { gap: 2 });
+      return;
     }
-
-    // Table headers
-    this.doc.setFontSize(9);
-    this.doc.setFont('helvetica', 'bold');
-    const colWidths = [15, 60, 30, 85]; // Adjust based on content
-    let xPos = this.margin;
-
-    headers.forEach((header, index) => {
-      this.doc.text(header, xPos, this.currentY);
-      xPos += colWidths[index];
-    });
-    this.currentY += 6;
-
-    // Table data
-    this.doc.setFont('helvetica', 'normal');
-    data.forEach((row, rowIndex) => {
-      if (this.currentY > this.pageHeight - 20) {
-        this.doc.addPage();
-        this.currentY = this.margin;
-      }
-
-      xPos = this.margin;
-      row.forEach((cell, cellIndex) => {
-        const cellText = String(cell || '').substring(0, 50); // Truncate long text
-        this.doc.text(cellText, xPos, this.currentY);
-        xPos += colWidths[cellIndex];
-      });
-      this.currentY += 5;
-    });
-    this.currentY += 10;
+    const sev = Object.fromEntries([...SEVERITIES, "unscored"].map((s) => [s, 0]));
+    const status = {};
+    let kev = 0;
+    for (const v of vulns) {
+      const s = String(v.ratings?.[0]?.severity || "unscored").toLowerCase();
+      sev[SEVERITIES.includes(s) ? s : "unscored"] += 1;
+      const st = statusOf(v).label;
+      status[st] = (status[st] || 0) + 1;
+      if (getProp(v, "cert-in:kev_date_added")) kev += 1;
+    }
+    this.bullets([
+      `Total: ${vulns.length} - critical ${sev.critical}, high ${sev.high}, medium ${sev.medium}, low ${sev.low}, unscored ${sev.unscored}`,
+      `Actively exploited (CISA KEV): ${kev}`,
+      `VEX status: ${Object.entries(status).map(([k, n]) => `${k} ${n}`).join(", ")}`,
+    ]);
+    const names = new Map((sbom.components || []).map((c) => [c["bom-ref"], `${c.name}@${c.version || ""}`]));
+    const ranked = [...vulns].sort((a, b) =>
+      String(getProp(a, "cert-in:priority") || "P9").localeCompare(String(getProp(b, "cert-in:priority") || "P9")));
+    this.text("Highest-priority vulnerabilities:", { style: "bold" });
+    this.table(
+      [{ header: "Prio", width: 12 }, { header: "ID", width: 38 }, { header: "Severity", width: 20 },
+        { header: "Component(s)", width: 45 }, { header: "VEX status", width: 25 }, { header: "Fix", width: 40 }],
+      ranked.slice(0, 25).map((v) => [
+        String(getProp(v, "cert-in:priority") || "").split(" - ")[0] || "-",
+        `${v.id}${getProp(v, "cert-in:kev_date_added") ? " (KEV)" : ""}`,
+        [v.ratings?.[0]?.severity, v.ratings?.[0]?.score].filter((x) => x !== undefined && x !== null).join(" ") || "-",
+        (v.affects || []).map((a) => names.get(a.ref) || a.ref).join(", "),
+        statusOf(v).label,
+        (v.recommendation || "").replace(/^[^:]+:\s*/, "") || "-",
+      ]),
+    );
   }
 
-  addSummary(components) {
-    const totalComponents = components.length;
-    const withVulnerabilities = components.filter(c => c.vulnerabilities && c.vulnerabilities.length > 0).length;
-    const withPatchStatus = components.filter(c => c.patchStatus && c.patchStatus !== 'Unknown').length;
-    const withCriticality = components.filter(c => c.criticality && c.criticality !== 'Unknown').length;
-
-    const summary = [
-      `Total Components: ${totalComponents}`,
-      `Components with Vulnerabilities: ${withVulnerabilities}`,
-      `Components with Patch Status: ${withPatchStatus}`,
-      `Components with Criticality: ${withCriticality}`,
-      `Compliance Rate: ${Math.round((withPatchStatus + withCriticality) / (totalComponents * 2) * 100)}%`
-    ];
-
-    this.addSection('Summary', summary);
-  }
-
-  addComplianceInfo() {
-    const complianceInfo = [
-      'This SBOM has been processed to include CERT-In required properties:',
-      '• Component Name, Version, and Description',
-      '• Vulnerability information and Criticality assessment',
-      '• Patch Status and Release Date information',
-      '• End-of-Life Date and Usage Restrictions',
-      '• Component Supplier and External References',
-      '• Digital Signature for integrity verification'
-    ];
-
-    this.addSection('CERT-In Compliance', complianceInfo);
-  }
-
-
-  exportDetailedPDF(sbom, components, filename = 'sbom-comprehensive-report.pdf') {
-    try {
-      this.initializeDocument();
-
-      // Header
-      this.addHeader(
-        'CERT-In SBOM Comprehensive Report',
-        'Complete Software Bill of Materials Analysis with CERT-In Compliance'
-      );
-
-      // Summary
-      this.addSummary(components);
-
-      // SBOM Information
-      const sbomInfo = [
-        `SBOM Version: ${sbom.specVersion || '1.5'}`,
-        `Serial Number: ${sbom.serialNumber || 'N/A'}`,
-        `Version: ${sbom.version || '1'}`,
-        `Metadata Timestamp: ${sbom.metadata?.timestamp || 'N/A'}`,
-        `Tools Used: ${sbom.metadata?.tools?.map(t => t.name).join(', ') || 'N/A'}`
-      ];
-      this.addSection('SBOM Information', sbomInfo);
-
-      // Components Overview Table
-      const tableHeaders = ['#', 'Component', 'Version', 'Criticality', 'Patch Status'];
-      const tableData = components.map((comp, index) => [
-        index + 1,
-        comp.name || 'N/A',
-        comp.version || 'N/A',
-        comp.criticality || 'Unknown',
-        comp.patchStatus || 'Unknown'
+  addComponents(components, sbom) {
+    this.heading("Components overview");
+    this.table(
+      [{ header: "#", width: 10 }, { header: "Component", width: 50 }, { header: "Version", width: 28 },
+        { header: "Criticality", width: 22 }, { header: "Patch Status", width: 70 }],
+      components.map((c, i) => [i + 1, c.name || "NA", c.version || "NA", getProp(c, "Criticality") || "NA", getProp(c, "Patch Status") || "NA"]),
+    );
+    const affected = new Map();
+    for (const v of sbom.vulnerabilities || []) for (const a of v.affects || []) affected.set(a.ref, (affected.get(a.ref) || 0) + 1);
+    this.heading("Component details");
+    components.forEach((c, i) => {
+      this.ensureSpace(30);
+      this.text(`${i + 1}. ${c.name || "Unnamed"} ${c.version || ""}`, { size: 11, style: "bold" });
+      const lic = (c.licenses || []).map((l) => l.expression || l.license?.id || l.license?.name).filter(Boolean).join(", ");
+      this.bullets([
+        `Type: ${c.type || "NA"} | purl: ${c.purl || "NA"}`,
+        `Description: ${c.description || "NA"}`,
+        `Licence: ${lic || "NA"}`,
+        `Hashes: ${(c.hashes || []).map((h) => h.alg).join(", ") || "NA"}`,
+        `Vulnerabilities: ${affected.get(c["bom-ref"]) || 0}`,
+        ...PROPERTY_ROWS.map((name) => `${name}: ${getProp(c, name) || "NA"}`),
       ]);
+    });
+  }
 
-      this.addTable(tableHeaders, tableData, 'Components Overview');
-
-      // Detailed Components
-      this.addSection('Detailed Component Analysis', 'Individual component details with all available information:');
-      
-      components.forEach((comp, index) => {
-        if (index > 0 && index % 15 === 0) {
-          this.doc.addPage();
-          this.currentY = this.margin;
-        }
-
-        const componentDetails = [
-          `Component: ${comp.name || 'N/A'}`,
-          `Version: ${comp.version || 'N/A'}`,
-          `Type: ${comp.type || 'N/A'}`,
-          `Description: ${comp.description || 'No description available'}`,
-          `Criticality: ${comp.criticality || 'Unknown'}`,
-          `Patch Status: ${comp.patchStatus || 'Unknown'}`,
-          `Release Date: ${comp.releaseDate || 'N/A'}`,
-          `End-of-Life: ${comp.endOfLifeDate || 'N/A'}`,
-          `Component Supplier: ${comp.componentSupplier || 'N/A'}`,
-          `Usage Restrictions: ${comp.usageRestrictions || 'N/A'}`,
-          `PURL: ${comp.purl || 'N/A'}`,
-          `Vulnerabilities: ${comp.vulnerabilities ? comp.vulnerabilities.length : 0} found`,
-          `External References: ${comp.externalReferences ? comp.externalReferences.length : 0} found`,
-          `Hashes: ${comp.hashes ? comp.hashes.length : 0} available`
-        ];
-
-        this.addSection(`Component ${index + 1}: ${comp.name || 'Unnamed'}`, componentDetails);
-      });
-
-      // Compliance Information
-      this.addComplianceInfo();
-
-      // Footer
+  addFooters() {
+    const pages = this.doc.getNumberOfPages();
+    for (let p = 1; p <= pages; p++) {
+      this.doc.setPage(p);
       this.doc.setFontSize(8);
-      this.doc.setFont('helvetica', 'italic');
-      this.doc.text('Generated by CERT-In SBOM Mapper', this.margin, this.pageHeight - 10);
-      this.doc.text('For compliance with CERT-In Technical Guidelines', 120, this.pageHeight - 10);
+      this.doc.setFont("helvetica", "italic");
+      this.doc.text("Generated by CERT-In SBOM Mapper - CERT-In Technical Guidelines v2.0", this.margin, this.pageHeight - 8);
+      this.doc.text(`Page ${p} of ${pages}`, this.pageWidth - this.margin - 20, this.pageHeight - 8);
+    }
+  }
 
-      // Save the PDF
-      this.doc.save(filename);
-      return { success: true, message: 'Comprehensive PDF exported successfully!' };
+  build(sbom, components) {
+    const doc = { ...sbom, components };
+    this.initializeDocument();
+    this.text("CERT-In SBOM Report", { size: 18, style: "bold" });
+    this.text(`Report generated: ${new Date().toISOString()}`, { size: 9, gap: 4 });
+    this.addDocumentInfo(doc);
+    this.addConformance(doc);
+    this.addVulnerabilities(doc);
+    this.addComponents(components, doc);
+    this.addFooters();
+    return this.doc;
+  }
 
+  exportDetailedPDF(sbom, components, filename = "sbom-comprehensive-report.pdf") {
+    try {
+      this.build(sbom, components).save(filename);
+      return { success: true, message: "Comprehensive PDF exported successfully!" };
     } catch (error) {
-      console.error('PDF export error:', error);
-      return { success: false, message: 'Failed to export PDF: ' + error.message };
+      console.error("PDF export error:", error);
+      return { success: false, message: "Failed to export PDF: " + error.message };
     }
   }
 }

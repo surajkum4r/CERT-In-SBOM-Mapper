@@ -39,3 +39,14 @@
   border-radius: 5px;
   border: 1px solid #ccc;
 }
+
+.certin-basis {
+  display: block;
+  font-size: 0.8em;
+  color: #555;
+  margin-top: 2px;
+}
+
+.certin-basis.review {
+  color: #b26a00;
+}

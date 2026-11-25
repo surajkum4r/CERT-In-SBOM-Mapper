@@ -565,6 +565,40 @@ body, html, div, span, p, h1, h2, h3, h4, h5, h6, section, article, aside, nav, 
   box-shadow: 0 3px 7px rgba(32, 201, 151, 0.6);
 }
 
+.export-button.red {
+  background-color: #c62828;
+  box-shadow: 0 3px 7px rgba(198, 40, 40, 0.6);
+}
+
+/* CERT-In document details in the export dialog */
+.certin-export-details {
+  border-top: 1px solid #e0e0e0;
+  margin-top: 12px;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.certin-export-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9em;
+}
+
+.certin-export-field input[type="text"],
+.certin-export-field textarea {
+  padding: 6px;
+  font: inherit;
+}
+
+.certin-export-details small {
+  color: #666;
+}
+
 /* Sidebar bottom section */
 .sidebar-bottom {
   width: 100%;

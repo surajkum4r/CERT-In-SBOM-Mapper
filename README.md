@@ -38,8 +38,11 @@ While exploring few paid and open-source tools, we found it does not fully satis
 
 - Upload tool-generated CycloneDX SBOM files  
 - Edit and complete missing mandatory fields as per CERT-In guidelines  
-- Export the updated SBOM in CycloneDX JSON and Excel formats for compliance
 - Background auto-population for CERT-In properties (Patch Status, Release Date, Criticality, etc.)
+- Vulnerabilities from OSV, CISA KEV and EPSS written into the SBOM's `vulnerabilities[]`, with P0–P3 priority
+- **Vulnerability Status (VEX)** panel: record the CERT-In section 6 status of each vulnerability (Not affected / Affected / Fixed / Under Investigation) and export **CycloneDX VEX** and a **CSAF 2.0** advisory
+- Export dialog with the CERT-In document details: **Author of SBOM Data**, assembly **Timestamp**, the Table 5 **Practices and Processes** declaration, and a **public / private** SBOM (5.3.2)
+- Export the updated SBOM in CycloneDX JSON (optionally digitally signed), CSV, Excel and PDF
 
 ---
 
@@ -95,21 +98,74 @@ Notes:
 
 ### What gets auto-populated
 
-- Patch Status: via OSV (fixed versions) and registry latest version.  
-  - Examples: `Update available (>= 2.8.9)`, `Update available (latest 1.2.3)`, `Up to date`.
-- Release Date: from package registries (npm/PyPI/Maven); GitHub created_at as fallback when token is set.  
-- Criticality: highest of:  
-  1) SBOM `vulnerabilities[].ratings[].severity` matched by `affects[].ref` → component `bom-ref`  
-  2) OSV CVSS score mapping  
-  3) Count-based fallback (if needed)
-- End-of-Life Date: from `endoflife.date` for known products (nodejs, python, java). Library EOL is usually not published.
+Values follow the CERT-In Technical Guidelines v2.0 (09.07.2025), Table 5.
+
+| Property | How it is filled |
+|---|---|
+| Patch Status | Checked against OSV for the component's **exact version**. Shows `Update available (>= X)`, where X is the fix on the component's own release line (Django 4.2.7 → 4.2.30, not 6.x). Prefixed `URGENT - actively exploited (CISA KEV)` when a vulnerability is in CISA's Known Exploited Vulnerabilities catalogue. `No fix available (N known vulnerabilities)` when no fix is published. `NA` when the component could not be checked (never a false "Up to date"). |
+| Vulnerabilities | Every finding is added to the exported SBOM's `vulnerabilities[]`, linked to the component (`affects`), with CVSS score, CWE, fix recommendation, CISA KEV status, EPSS exploit probability and a P0–P3 priority. Records for the same flaw from different databases (GHSA / PYSEC / Debian…) are merged under the CVE. |
+| Release Date | Release date of **this version** (npm `time[version]`, PyPI release files, deps.dev for Maven/Go/Cargo/NuGet). |
+| End-of-Life Date | endoflife.date, matched against its product list, with aliases (e.g. `log4j-core` → log4j, `spring-core` → spring-framework). Shows `Not announced` while a cycle is supported and `Ended (date not published)` when appropriate. Distro packages (deb/rpm/apk) are skipped: the distribution supports them. |
+| Criticality | Kept if the SBOM already has one. Otherwise `Critical` if a vulnerability is actively exploited (KEV) or the package is reported malicious, else the highest of the SBOM's own ratings and the OSV severity. The basis is recorded in `cert-in:criticality_basis` and derived values are marked for review. |
+| Component Supplier | The supplying **entity**: SBOM `supplier` / registry author, or the purl namespace (Maven groupId, npm scope, Go host org). |
+| Component Origin | From the licence: open-source licence → Open-source, proprietary terms → Proprietary. |
+| Usage Restrictions | Licence family analysis: permissive / weak copyleft (LGPL, MPL, EPL) / copyleft (GPL) / strong copyleft (AGPL) / restricted use (non-commercial, BUSL). Export control is marked as not assessed. |
+| Executable / Archive / Structured | From the component type and package type (a jar/wheel/tgz library is an archive and not executable; an `application`/`container` is executable). |
+| Component Description / Licence / Hashes | Written into the component's own CycloneDX fields when the SBOM has none: description and licence from the registry (an SPDX `id` only for real SPDX identifiers, otherwise a licence `name`), hashes of this version's artefact from npm (SHA-512, SHA-1) and PyPI (SHA-256; `cert-in:hash_source` names the file). Existing values are never overwritten. |
+| Author of SBOM Data | From the SBOM's `metadata.authors` / manufacturer / supplier, or the author entered in the export dialog. |
+| Timestamp | Set to the export time (the SBOM data assembly time); the generator's original time is kept as `cert-in:source_timestamp`. |
+| Unique Identifier | The component's purl, kept **valid** so scanners can match it. Components without one get `pkg:generic/<supplier>/<name>@<version>`, which is the CERT-In `pkg:supplier/Org/Component@Version` shape. |
+
+#### Vulnerability sources
+
+| Source | Covers |
+|---|---|
+| [OSV](https://osv.dev) | npm, PyPI, Maven, Go, crates.io, NuGet, RubyGems, Packagist, Hex, Pub; **Debian, Ubuntu and Alpine OS packages** (queried by distro release and source package); GitHub advisories; malicious-package reports |
+| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | actively exploited CVEs (loaded from CISA's official [`cisagov/kev-data`](https://github.com/cisagov/kev-data) mirror, which browsers can fetch) |
+| [FIRST EPSS](https://www.first.org/epss/) | probability that a CVE is exploited in the next 30 days |
+
+Priority: **P0** CISA KEV · **P1** critical severity, EPSS ≥ 10% or a malicious package · **P2** high · **P3** other.
+
+### Public and private SBOMs (CERT-In 5.3.2)
+
+The export dialog offers two distributions:
+
+- **Private:** the full SBOM, including `vulnerabilities[]`, Patch Status and notes.
+- **Public:** the same SBOM without vulnerability information (`vulnerabilities[]`, Patch Status and Comments or Notes are removed). Share this one widely, and the private one only with authorised parties.
+
+### VEX and CSAF (CERT-In section 6)
+
+Open **Vulnerability Status (VEX)** after processing. New findings start as *Under Investigation*. Set each one to *Not affected* (with a justification such as "vulnerable code not reachable"), *Affected* or *Fixed*, and add details. Then export:
+
+- **CycloneDX VEX:** references the SBOM's components by BOM-Link (`urn:cdx:<serial>/<version>#<bom-ref>`).
+- **CSAF 2.0 (csaf_vex profile):** needs a publisher name and namespace URL.
+
+The statuses are also kept in the SBOM's own `vulnerabilities[].analysis`.
+
+### Process requirements (CERT-In 5.3, 5.4)
+
+Access control, secure distribution, SDLC automation, auditing, incident response and signing-key
+handling depend on how the tool is deployed. See [docs/CERT-In-process-guide.md](docs/CERT-In-process-guide.md)
+for what the app provides and what your organisation must do for each requirement.
 
 ### Considerations and limitations
 
-- OSV may not always return severity or fixed versions immediately for new advisories; in such cases Criticality may be Unknown and Patch Status may show `Update available (>= NA)`.
-- endoflife.date publishes product/platform EOL, not library EOL. Many Maven libraries legitimately have no EOL.
+- Components without an ecosystem purl (vendored C/C++ code, `pkg:generic`, internal libraries) cannot be matched by OSV. They show Patch Status `NA` with a "Vulnerabilities not checked" note. To cover them, add a CPE and scan with an NVD-capable tool, or fill the fields manually.
+- NVD is not queried from the browser: it does not allow cross-origin requests, and an API key would be exposed in client-side code.
+- Hashes are only added where the registry exposes them to browsers (npm, PyPI). Maven Central (repo1 and search.maven.org) and the Debian/Alpine archives do not allow cross-origin requests, so those components keep whatever hashes the uploaded SBOM had. Add them by hand in the component editor (Hashes section); the conformance panel lists components still missing them. Maven version, release-date and licence data come from deps.dev instead.
+- endoflife.date publishes product/platform EOL, not library EOL. Many libraries legitimately show `NA`.
+- Criticality is derived from vulnerability severity when the SBOM has none. CERT-In defines criticality as the component's importance to the application, so every derived value is marked for review in `cert-in:criticality_basis`, and the conformance panel counts them. Setting Criticality in the editor marks it as reviewed.
+- Values a person decided (Criticality, Usage Restrictions, Component Supplier, Component Origin) are never overwritten by processing, whether they came from the uploaded SBOM or an edit. Computed fields (Patch Status, Release Date, EOL…) are refreshed.
 - GitHub calls are skipped if no token is set, to avoid 401/429 rate limits.
 - Background fetching is batched; large SBOMs can take time to complete.
+
+### Running the tests
+
+```
+CI=true npm test
+```
+
+The tests mock all network calls.
 
 ---
 

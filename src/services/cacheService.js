@@ -1,4 +1,16 @@
 // Centralized cache service for persistent session-wide caching
+
+// Bump when the shape or meaning of cached results changes, so stale entries are never reused.
+const CACHE_SCHEMA = 2;
+
+// JSON.stringify with object keys sorted at every level (stable across key order).
+export function stableStringify(value) {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(value).sort().filter((k) => value[k] !== undefined)
+    .map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+}
 class CacheService {
   constructor() {
     this.cache = new Map();
@@ -125,8 +137,9 @@ class CacheService {
       )
     };
     
-    // Create a deterministic string
-    const dataString = JSON.stringify(componentData, Object.keys(componentData).sort());
+    // Deterministic string. (A key array passed to JSON.stringify is a whitelist applied at
+    // every nesting level, which silently dropped all nested content from the checksum.)
+    const dataString = stableStringify({ schema: CACHE_SCHEMA, ...componentData });
     
     // Simple hash function (you could use crypto.subtle for production)
     let hash = 0;
@@ -189,8 +202,9 @@ class CacheService {
       }
     };
     
-    // Create deterministic string
-    const dataString = JSON.stringify(fileData, Object.keys(fileData).sort());
+    // Deterministic string - see generateComponentChecksum. The previous whitelist form reduced
+    // every component to {}, so different SBOMs of the same size shared one cached result.
+    const dataString = stableStringify({ schema: CACHE_SCHEMA, ...fileData });
     
     // Generate hash
     let hash = 0;
